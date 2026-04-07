@@ -1,2 +1,3 @@
-# firmware-ambit_dyeCO2
-Repo for the firmware of the ambit_dyeCO2
+# firmware-ambit PAR meter
+Repo for the firmware of the ambit PAR meter version
+HW Design (L. Grabowski)
