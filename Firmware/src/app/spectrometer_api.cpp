@@ -92,6 +92,7 @@ float par_coefficients[18] = {
 
 float slope = 0;
 float intercept = 0;
+char dev_name[20] = "NoName";
 
 void loadpref() {
   preferences.begin("par_coeffs", true);
@@ -105,6 +106,10 @@ void loadpref() {
   
   slope = preferences.getFloat("slope", 1.0f);
   intercept = preferences.getFloat("intercept", 0.0f);
+  if(preferences.isKey("name"))
+  {
+    preferences.getString("name", dev_name, 20);
+  } 
   preferences.end();
 }
 
@@ -663,6 +668,9 @@ bool set_calibration_slope(int argc, const char *argv[])
   return true;
 }
 
+
+
+
 bool set_calibration_intercept(int argc, const char *argv[])
 {
   if (argc < 1 ) {
@@ -676,4 +684,21 @@ bool set_calibration_intercept(int argc, const char *argv[])
   preferences.end();
   Serial.println(intercept);
   return true;
+}
+
+void cmd_set_dev_name(int argc, const char* name[])
+{
+    if (argc < 1 ) {
+      Serial.println(F("{\"calibration\":{\"error\":\"missing_args\"}}"));
+    }
+    strncpy(dev_name, name[0], 20);
+    preferences.begin("par_coeffs", false);
+    preferences.putString("name", dev_name);
+    preferences.end();
+
+}
+
+char* cmd_get_dev_name()
+{
+  return dev_name;
 }

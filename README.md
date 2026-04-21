@@ -28,10 +28,15 @@
     - Response: 10.0
     - Example for slope = 10.0
     - Set the "a" coefficient for y=ax+b scaling
-* "cal_par_ntercept," + intercept -> 
+* "cal_par_intercept," + intercept -> 
     - Response: 2.3
     - Example for intercept = 2.3
     - Set the "b" coefficient for y=ax+b scaling
+* "set_name," + string
+    - response: "new_name: Lukasz"
+    - add custom device name
+* "get_name" 
+    - response: "Lukasz"
     
 
 # Protocol 

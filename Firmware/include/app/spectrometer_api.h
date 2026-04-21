@@ -26,6 +26,8 @@ bool cmd_get_par_raw(float *out_par);
 bool cmd_get_par(float *out_par);
 bool set_calibration_slope(int argc, const char *argv[]);
 bool set_calibration_intercept(int argc, const char *argv[]);
+void cmd_set_dev_name(int ar, const char *argv[]);
+char *cmd_get_dev_name();
 void loadpref();
 
 

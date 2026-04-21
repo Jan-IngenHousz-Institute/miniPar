@@ -1,5 +1,6 @@
 #include <Wire.h>
 #include "app/commands.h"
+#include "HWCDC.h"
 #include "app/debug_api.h"
 #include "app/spectrometer_api.h"
 #include "app/as7341_api.h"
@@ -268,6 +269,23 @@ void handleCommandText(const String &cmd) {
     } else {
       Serial.println(F("error_missing_calibration_args"));
     }
+
+  } else if (cmd.startsWith("set_name")) {
+
+    int comma = cmd.indexOf(',');
+    if (comma > 0) {
+      const char *arg = cmd.c_str() + comma + 1;
+      cmd_set_dev_name(1, &arg);
+      Serial.print("new name: " );
+      Serial.println(cmd_get_dev_name());
+
+    } else {
+      Serial.println(F("error_name"));
+    }
+  } else if (cmd.startsWith("get_name")) {
+      Serial.println(cmd_get_dev_name());
+  
+  
   } else if (cmd == "reboot") {
     cmd_reboot();
 
