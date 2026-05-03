@@ -83,18 +83,28 @@ bool handleJsonProtocol(const String &json) {
   };
 
   if (doc.is<JsonArray>()) {
-    for (JsonVariant v : doc.as<JsonArray>()) {
+    JsonArray arr = doc.as<JsonArray>();
+    // Try: array of objects each containing a "set" key
+    for (JsonVariant v : arr) {
       JsonObject obj = v.as<JsonObject>();
       if (obj.isNull())
         continue;
-      JsonArray proto = obj["_protocol_set_"].as<JsonArray>();
+      JsonArray proto = obj["set"].as<JsonArray>();
       if (!proto.isNull())
         processProtocolSet(proto);
     }
+    // Fallback: treat the array itself as the command list
+    if (!handledAny)
+      processProtocolSet(arr);
   } else if (doc.is<JsonObject>()) {
-    JsonArray proto = doc.as<JsonObject>()["_protocol_set_"].as<JsonArray>();
-    if (!proto.isNull())
-      processProtocolSet(proto);
+    // Iterate all members; process any array value as the command list
+    for (JsonPair kv : doc.as<JsonObject>()) {
+      JsonArray proto = kv.value().as<JsonArray>();
+      if (!proto.isNull()) {
+        processProtocolSet(proto);
+        break;
+      }
+    }
   } else {
     serial_string_end();
     return false;
@@ -119,6 +129,9 @@ bool handleCommandText(const String &cmd) {
 
   } else if (cmd == "spec") {
     spectrometer_read();
+
+  } else if (cmd == "spec_raw") {
+    spectrometer_read_raw();
 
   } else if (cmd.startsWith("set_led")) {
     int ledCurrent = 10; // default LED current in mA

@@ -419,7 +419,7 @@ bool spectrometerPrepareLegacyCommand() {
 // Public API — spectrometer commands
 // ---------------------------------------------------------------------------
 
-bool spectrometer_read() {
+bool spectrometer_read_raw() {
   if (!spectrometerPrepareLegacyCommand()) return false;
 
   SpectrometerResult result;
@@ -431,6 +431,39 @@ bool spectrometer_read() {
   Serial.print(F("{\"spectrometer\":"));
   printChannelsObject(result);
   Serial.print(F("}"));
+  return true;
+}
+
+bool spectrometer_read() {
+  if (!spectrometerPrepareLegacyCommand()) return false;
+
+  SpectrometerResult result;
+  if (!spectrometerReadInto(&result)) {
+    Serial.print(F("{\"spectrometer\":{\"error\":\"read_failed\"}}"));
+    return false;
+  }
+
+  // Apply per-channel sensitivity correction
+  bool use_index_names = false;
+  const char * const *names = resolveChannelNames(result, &use_index_names);
+
+  Serial.print(F("{\"spectrometer\":{\"model\":\""));
+  Serial.print(spectrometerModelName(result.model));
+  Serial.print(F("\",\"channels\":{"));
+  for (uint8_t i = 0; i < result.channel_count; i++) {
+    if (i > 0) Serial.print(',');
+    Serial.print('"');
+    if (use_index_names) {
+      Serial.print('d');
+      Serial.print(i);
+    } else {
+      Serial.print(names[i]);
+    }
+    Serial.print(F("\":"));
+    float corrected = (float)result.channels[i] * par_coefficients[i];
+    Serial.print(corrected, 4);
+  }
+  Serial.print(F("}}}"));
   return true;
 }
 
