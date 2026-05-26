@@ -3,6 +3,7 @@
 #include "HWCDC.h"
 #include "app/debug_api.h"
 #include "app/spectrometer_api.h"
+#include <esp_system.h>
 
 #include <ArduinoJson.h>
 
@@ -23,6 +24,231 @@ static void printJsonSafeString(const char *s) {
       Serial.print(c);
     }
   }
+}
+
+static void printRawI2CScan() {
+  bool first = true;
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      if (!first)
+        Serial.print(',');
+      first = false;
+      Serial.print(F("0x"));
+      if (addr < 0x10)
+        Serial.print('0');
+      Serial.print(addr, HEX);
+    }
+  }
+}
+
+static bool printRawSpectrometerChannels(const SpectrometerResult &result, bool corrected) {
+  if (result.channel_count == 0) {
+    Serial.print(F("error:no_channels"));
+    return false;
+  }
+
+  Serial.print(spectrometerModelName(result.model));
+  Serial.print(',');
+  for (uint8_t i = 0; i < result.channel_count; i++) {
+    if (i > 0)
+      Serial.print(',');
+    if (corrected) {
+      float correctedVal = (float)result.channels[i] * par_coefficients[i];
+      Serial.print(correctedVal, 4);
+    } else {
+      Serial.print(result.channels[i]);
+    }
+  }
+  return true;
+}
+
+static bool printRawSpectrometerRead() {
+  if (!spectrometerPrepareLegacyCommand())
+    return false;
+
+  SpectrometerResult result;
+  if (!spectrometerReadInto(&result)) {
+    Serial.print(F("error:read_failed"));
+    return false;
+  }
+  return printRawSpectrometerChannels(result, true);
+}
+
+static bool printRawSpectrometerReadRaw() {
+  if (!spectrometerPrepareLegacyCommand())
+    return false;
+
+  SpectrometerResult result;
+  if (!spectrometerReadInto(&result)) {
+    Serial.print(F("error:read_failed"));
+    return false;
+  }
+  return printRawSpectrometerChannels(result, false);
+}
+
+static bool printRawSpectrometerReadFlash(uint16_t led_current_ma) {
+  if (!spectrometerPrepareLegacyCommand())
+    return false;
+
+  if (led_current_ma > 20)
+    led_current_ma = 20;
+
+  SpectrometerResult dark, lit, diff;
+  if (!spectrometerReadInto(&dark)) {
+    Serial.print(F("error:dark_read_failed"));
+    return false;
+  }
+
+  const uint16_t actual_led_ma = spectrometerSetLedCurrentSilent(led_current_ma);
+  if (actual_led_ma == 0xFFFF) {
+    Serial.print(F("error:led_set_failed"));
+    return false;
+  }
+
+  const uint8_t atime = spectrometerGetAtIME();
+  const uint16_t astep = spectrometerGetAStep();
+  uint32_t t_ms = ((uint32_t)(atime + 1) * (uint32_t)(astep + 1) * 278ul + 99999ul) / 100000ul + 2ul;
+  if (t_ms < 5u) t_ms = 5u;
+  delay(t_ms);
+
+  if (!spectrometerReadInto(&lit)) {
+    spectrometerSetLedCurrentSilent(0);
+    Serial.print(F("error:lit_read_failed"));
+    return false;
+  }
+
+  spectrometerSetLedCurrentSilent(0);
+
+  diff.model = dark.model;
+  diff.channel_count = dark.channel_count;
+  diff.sat_mask = dark.sat_mask | lit.sat_mask;
+  for (uint8_t i = 0; i < dark.channel_count; i++) {
+    diff.channels[i] = lit.channels[i] > dark.channels[i] ? lit.channels[i] - dark.channels[i] : 0;
+  }
+
+  Serial.print(F("dark:"));
+  printRawSpectrometerChannels(dark, false);
+  Serial.print(F(";lit:"));
+  printRawSpectrometerChannels(lit, false);
+  Serial.print(F(";diff:"));
+  printRawSpectrometerChannels(diff, false);
+  return true;
+}
+
+static bool printRawSpectrometerSetLedCurrent(uint16_t led_current_ma) {
+  if (!spectrometerPrepareLegacyCommand())
+    return false;
+
+  const uint16_t actual_ma = spectrometerSetLedCurrentSilent(led_current_ma);
+  if (actual_ma == 0xFFFF) {
+    Serial.print(F("error:led_set_failed"));
+    return false;
+  }
+  Serial.print(actual_ma);
+  return true;
+}
+
+static bool printRawSpectrometerSetAtime(const char *arg) {
+  if (!arg || *arg == '\0') {
+    Serial.print(F("error:missing_arg"));
+    return false;
+  }
+  int val = atoi(arg);
+  if (val < 0 || val > 255) {
+    Serial.print(F("error:atime_out_of_range"));
+    return false;
+  }
+  if (!spectrometerSetAtIMEValue(static_cast<uint8_t>(val))) {
+    Serial.print(F("error:set_failed"));
+    return false;
+  }
+  Serial.print(val);
+  return true;
+}
+
+static bool printRawSpectrometerSetAStep(const char *arg) {
+  if (!arg || *arg == '\0') {
+    Serial.print(F("error:missing_arg"));
+    return false;
+  }
+  long val = atol(arg);
+  if (val < 0 || val > 65534) {
+    Serial.print(F("error:astep_out_of_range"));
+    return false;
+  }
+  if (!spectrometerSetAStepValue(static_cast<uint16_t>(val))) {
+    Serial.print(F("error:set_failed"));
+    return false;
+  }
+  Serial.print(val);
+  return true;
+}
+
+static bool printRawSpectrometerSetGain(const char *arg) {
+  if (!arg || *arg == '\0') {
+    Serial.print(F("error:missing_arg"));
+    return false;
+  }
+  int val = atoi(arg);
+  const int max_gain = (spectrometer_model == SpectrometerModel::AS7341) ? 10 : 12;
+  if (val < 0 || val > max_gain) {
+    Serial.print(F("error:gain_out_of_range"));
+    return false;
+  }
+  if (!spectrometerSetGainValue(val)) {
+    Serial.print(F("error:set_failed"));
+    return false;
+  }
+  Serial.print(val);
+  return true;
+}
+
+static void printRawSpectrometerStatus() {
+  Serial.print(F("model="));
+  Serial.print(spectrometerModelName(spectrometer_model));
+  Serial.print(F(",available="));
+  Serial.print(spectrometer_available ? 1 : 0);
+  if (spectrometer_available) {
+    Serial.print(F(",atime="));
+    Serial.print(spectrometerGetAtIME());
+    Serial.print(F(",astep="));
+    Serial.print(spectrometerGetAStep());
+    Serial.print(F(",gain="));
+    Serial.print(spectrometerGetGain());
+  }
+}
+
+static bool setCalibrationSlopeRaw(const char *arg) {
+  if (!arg || *arg == '\0') {
+    Serial.print(F("error:missing_args"));
+    return false;
+  }
+  float value = atof(arg);
+  if (!setCalibrationSlopeValue(value)) {
+    Serial.print(F("error:set_failed"));
+    return false;
+  }
+  Serial.print(value);
+  return true;
+}
+
+static bool setCalibrationInterceptRaw(const char *arg) {
+  if (!arg || *arg == '\0') {
+    Serial.print(F("error:missing_args"));
+    return false;
+  }
+  float value = atof(arg);
+  if (!setCalibrationInterceptValue(value)) {
+    Serial.print(F("error:set_failed"));
+    return false;
+  }
+  Serial.print(value);
+  return true;
+}
+
+static void printRawGetDeviceName() {
+  Serial.print(cmd_get_dev_name());
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +302,7 @@ bool handleJsonProtocol(const String &json) {
           Serial.print(',');
         firstOut = false;
 
-        handleCommandText(String(cmd));
+        handleCommandText(String(cmd), true);
         handledAny = true;
       }
     }
@@ -118,125 +344,206 @@ bool handleJsonProtocol(const String &json) {
 
 
 
-bool handleCommandText(const String &cmd) {
+bool handleCommandText(const String &cmd, bool jsonMode) {
   if (cmd == "hello") {
-    Serial.print(F("{\"device\":\"MiniPAR\",\"version\":\"1.1\"}"));
+    if (jsonMode) {
+      Serial.print(F("{\"device\":\"MiniPAR\",\"version\":\"1.1\"}"));
+    } else {
+      Serial.print(F("MiniPAR,1.1"));
+    }
+
   } else if (cmd == "battery") {
-    Serial.print(F("{\"battery\":\"NaN\"}"));
+    if (jsonMode) {
+      Serial.print(F("{\"battery\":\"NaN\"}"));
+    } else {
+      Serial.print(F("NaN"));
+    }
 
   } else if (cmd == "i2c_scan") {
-    i2c_scan();
+    if (jsonMode) {
+      i2c_scan();
+    } else {
+      printRawI2CScan();
+    }
 
   } else if (cmd == "spec") {
-    spectrometer_read();
+    if (jsonMode) {
+      spectrometer_read();
+    } else {
+      printRawSpectrometerRead();
+    }
 
   } else if (cmd == "spec_raw") {
-    spectrometer_read_raw();
+    if (jsonMode) {
+      spectrometer_read_raw();
+    } else {
+      printRawSpectrometerReadRaw();
+    }
 
   } else if (cmd.startsWith("set_led")) {
     int ledCurrent = 10; // default LED current in mA
     int comma = cmd.indexOf(',');
-    if (comma > 0) {// If there's a comma, parse the LED current argument
+    if (comma > 0) {
       String arg = cmd.substring(comma + 1);
       arg.trim();
       ledCurrent = arg.toInt();
     }
-    spectrometer_set_led_current(static_cast<uint16_t>(ledCurrent));
+    if (jsonMode) {
+      spectrometer_set_led_current(static_cast<uint16_t>(ledCurrent));
+    } else {
+      printRawSpectrometerSetLedCurrent(static_cast<uint16_t>(ledCurrent));
+    }
 
   } else if (cmd.startsWith("spec_flash")) {
-    // print the AS7341 read with LED off and on, and the difference.
     int ledCurrent = 10; // default LED current in mA
     int comma = cmd.indexOf(',');
-
-    if (comma > 0) {// If there's a comma, parse the LED current argument
+    if (comma > 0) {
       String arg = cmd.substring(comma + 1);
       arg.trim();
       ledCurrent = arg.toInt();
     }
+    if (jsonMode) {
+      spectrometer_read_flash(static_cast<uint16_t>(ledCurrent));
+    } else {
+      printRawSpectrometerReadFlash(static_cast<uint16_t>(ledCurrent));
+    }
 
-    spectrometer_read_flash(static_cast<uint16_t>(ledCurrent));
-  
   } else if (cmd.startsWith("spec_set_atime")) {
     int comma = cmd.indexOf(',');
     const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
-    cmd_spectrometer_set_atime(comma > 0 ? 1 : 0, &arg);
+    if (jsonMode) {
+      cmd_spectrometer_set_atime(comma > 0 ? 1 : 0, &arg);
+    } else {
+      printRawSpectrometerSetAtime(arg);
+    }
 
   } else if (cmd.startsWith("spec_set_astep")) {
     int comma = cmd.indexOf(',');
     const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
-    cmd_spectrometer_set_astep(comma > 0 ? 1 : 0, &arg);
+    if (jsonMode) {
+      cmd_spectrometer_set_astep(comma > 0 ? 1 : 0, &arg);
+    } else {
+      printRawSpectrometerSetAStep(arg);
+    }
 
   } else if (cmd.startsWith("spec_set_gain")) {
     int comma = cmd.indexOf(',');
     const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
-    cmd_spectrometer_set_gain(comma > 0 ? 1 : 0, &arg);
+    if (jsonMode) {
+      cmd_spectrometer_set_gain(comma > 0 ? 1 : 0, &arg);
+    } else {
+      printRawSpectrometerSetGain(arg);
+    }
 
-  } else if (cmd == "spec_status") {
-    cmd_spectrometer_status();
-
-  } else if (cmd == "status") {
-    cmd_spectrometer_status();
+  } else if (cmd == "spec_status" || cmd == "status") {
+    if (jsonMode) {
+      cmd_spectrometer_status();
+    } else {
+      printRawSpectrometerStatus();
+    }
 
   } else if (cmd == "par_raw") {
     float par_raw = 0;
     if (cmd_get_par_raw(&par_raw)) {
-      Serial.print(F("{\"par_raw\":"));
-      Serial.print(par_raw);
-      Serial.print(F("}"));
+      if (jsonMode) {
+        Serial.print(F("{\"par_raw\":"));
+        Serial.print(par_raw);
+        Serial.print(F("}"));
+      } else {
+        Serial.print(par_raw);
+      }
     }
 
   } else if (cmd == "par") {
     float par = 0;
     if (cmd_get_par(&par)) {
-      Serial.print(F("{\"par\":"));
-      Serial.print(par);
-      Serial.print(F("}"));
+      if (jsonMode) {
+        Serial.print(F("{\"par\":"));
+        Serial.print(par);
+        Serial.print(F("}"));
+      } else {
+        Serial.print(par);
+      }
     }
-  
+
   } else if (cmd.startsWith("cal_par_slope")) {
-    // Example command: cal_par_slope,0.5
     int comma = cmd.indexOf(',');
     if (comma > 0) {
       const char *arg = cmd.c_str() + comma + 1;
-      set_calibration_slope(1, &arg);
+      if (jsonMode) {
+        set_calibration_slope(1, &arg);
+      } else {
+        setCalibrationSlopeRaw(arg);
+      }
     } else {
-      Serial.print(F("{\"calibration\":{\"error\":\"missing_args\"}}"));
+      if (jsonMode) {
+        Serial.print(F("{\"calibration\":{\"error\":\"missing_args\"}}"));
+      } else {
+        Serial.print(F("error:missing_args"));
+      }
     }
 
   } else if (cmd.startsWith("cal_par_intercept")) {
-    // Example command: cal_par_intercept,0.2
     int comma = cmd.indexOf(',');
     if (comma > 0) {
       const char *arg = cmd.c_str() + comma + 1;
-      set_calibration_intercept(1, &arg);
+      if (jsonMode) {
+        set_calibration_intercept(1, &arg);
+      } else {
+        setCalibrationInterceptRaw(arg);
+      }
     } else {
-      Serial.print(F("{\"calibration\":{\"error\":\"missing_args\"}}"));
+      if (jsonMode) {
+        Serial.print(F("{\"calibration\":{\"error\":\"missing_args\"}}"));
+      } else {
+        Serial.print(F("error:missing_args"));
+      }
     }
 
   } else if (cmd.startsWith("set_name")) {
-
     int comma = cmd.indexOf(',');
     if (comma > 0) {
       const char *arg = cmd.c_str() + comma + 1;
       cmd_set_dev_name(1, &arg);
+      if (jsonMode) {
+        Serial.print(F("{\"device_name\":\""));
+        printJsonSafeString(cmd_get_dev_name());
+        Serial.print(F("\"}"));
+      } else {
+        printRawGetDeviceName();
+      }
+    } else {
+      if (jsonMode) {
+        Serial.print(F("{\"error\":\"missing_args\"}"));
+      } else {
+        Serial.print(F("error:missing_args"));
+      }
+    }
+
+  } else if (cmd.startsWith("get_name")) {
+    if (jsonMode) {
       Serial.print(F("{\"device_name\":\""));
       printJsonSafeString(cmd_get_dev_name());
       Serial.print(F("\"}"));
-
     } else {
-      Serial.print(F("{\"error\":\"missing_args\"}"));
+      printRawGetDeviceName();
     }
-  } else if (cmd.startsWith("get_name")) {
-    Serial.print(F("{\"device_name\":\""));
-    printJsonSafeString(cmd_get_dev_name());
-    Serial.print(F("\"}"));
-  
-  
+
   } else if (cmd == "reboot") {
-    cmd_reboot();
+    if (jsonMode) {
+      cmd_reboot();
+    } else {
+      Serial.println(F("reboot"));
+      Serial.flush();
+      esp_restart();
+    }
 
   } else if (cmd.length() > 0) {
-    Serial.print(F("{\"error\":\"unknown_command\"}"));
+    if (jsonMode) {
+      Serial.print(F("{\"error\":\"unknown_command\"}"));
+    } else {
+      Serial.print(F("error:unknown_command"));
+    }
     return false;
   }
   return true;

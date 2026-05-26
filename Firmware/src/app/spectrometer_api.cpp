@@ -263,7 +263,7 @@ bool detectAndInitialize(bool promote_pending_to_unknown, const char *reason) {
 // ---------------------------------------------------------------------------
 
 // Populates *out from the active backend.  No printing, no guard checks.
-bool spectrometerReadInto(SpectrometerResult *out) {
+bool spectrometerReadIntoImpl(SpectrometerResult *out) {
   if (!out) return false;
   switch (spectrometer_model) {
   case SpectrometerModel::AS7341: return as7341_readInto(out);
@@ -272,31 +272,6 @@ bool spectrometerReadInto(SpectrometerResult *out) {
   }
 }
 
-// Sets LED current on the active backend, bypassing facade JSON output.
-// Returns quantized actual mA, 0 if disabled, 0xFFFF on error.
-uint16_t spectrometerSetLedCurrentSilent(uint16_t led_current_ma) {
-  switch (spectrometer_model) {
-  case SpectrometerModel::AS7341: return as7341_setLEDCurrent(led_current_ma);
-  case SpectrometerModel::AS7343: return as7343_setLEDCurrent(led_current_ma);
-  default: return kLedSetFailed;
-  }
-}
-
-uint8_t spectrometerGetAtIME() {
-  switch (spectrometer_model) {
-  case SpectrometerModel::AS7341: return as7341_getAtIME();
-  case SpectrometerModel::AS7343: return as7343_getAtIME();
-  default: return 100;
-  }
-}
-
-uint16_t spectrometerGetAStep() {
-  switch (spectrometer_model) {
-  case SpectrometerModel::AS7341: return as7341_getAStep();
-  case SpectrometerModel::AS7343: return as7343_getAStep();
-  default: return 999;
-  }
-}
 
 // Settling delay for LED stabilisation before a lit read.
 // Formula: ceil((ATIME+1)*(ASTEP+1)*2.78 µs / 1000) + 2 ms, floor 5 ms.
@@ -350,6 +325,87 @@ void printChannelsObject(const SpectrometerResult &r) {
 }
 
 } // namespace
+
+bool spectrometerReadInto(SpectrometerResult *out) {
+  return spectrometerReadIntoImpl(out);
+}
+
+uint8_t spectrometerGetGain() {
+  switch (spectrometer_model) {
+  case SpectrometerModel::AS7341: return as7341_getGain();
+  case SpectrometerModel::AS7343: return as7343_getGain();
+  default: return 0;
+  }
+}
+
+bool spectrometerSetAtIMEValue(uint8_t atime_value) {
+  if (!spectrometerPrepareLegacyCommand()) return false;
+  if (spectrometer_model == SpectrometerModel::AS7341)
+    return as7341_setAtIME(atime_value);
+  if (spectrometer_model == SpectrometerModel::AS7343)
+    return as7343_setAtIME(atime_value);
+  return false;
+}
+
+bool spectrometerSetAStepValue(uint16_t astep_value) {
+  if (!spectrometerPrepareLegacyCommand()) return false;
+  if (spectrometer_model == SpectrometerModel::AS7341)
+    return as7341_setAStep(astep_value);
+  if (spectrometer_model == SpectrometerModel::AS7343)
+    return as7343_setAStep(astep_value);
+  return false;
+}
+
+bool spectrometerSetGainValue(int gain_value) {
+  if (!spectrometerPrepareLegacyCommand()) return false;
+  if (spectrometer_model == SpectrometerModel::AS7341)
+    return as7341_setGain(static_cast<as7341_gain_t>(gain_value));
+  if (spectrometer_model == SpectrometerModel::AS7343)
+    return as7343_setGain(static_cast<uint8_t>(gain_value));
+  return false;
+}
+
+bool setCalibrationSlopeValue(float slope_value) {
+  slope = slope_value;
+  preferences.begin("par_coeffs", false);
+  preferences.putFloat("slope", slope);
+  preferences.end();
+  return true;
+}
+
+bool setCalibrationInterceptValue(float intercept_value) {
+  intercept = intercept_value;
+  preferences.begin("par_coeffs", false);
+  preferences.putFloat("intercept", intercept);
+  preferences.end();
+  return true;
+}
+
+// Sets LED current on the active backend, bypassing facade JSON output.
+// Returns quantized actual mA, 0 if disabled, 0xFFFF on error.
+uint16_t spectrometerSetLedCurrentSilent(uint16_t led_current_ma) {
+  switch (spectrometer_model) {
+  case SpectrometerModel::AS7341: return as7341_setLEDCurrent(led_current_ma);
+  case SpectrometerModel::AS7343: return as7343_setLEDCurrent(led_current_ma);
+  default: return kLedSetFailed;
+  }
+}
+
+uint8_t spectrometerGetAtIME() {
+  switch (spectrometer_model) {
+  case SpectrometerModel::AS7341: return as7341_getAtIME();
+  case SpectrometerModel::AS7343: return as7343_getAtIME();
+  default: return 100;
+  }
+}
+
+uint16_t spectrometerGetAStep() {
+  switch (spectrometer_model) {
+  case SpectrometerModel::AS7341: return as7341_getAStep();
+  case SpectrometerModel::AS7343: return as7343_getAStep();
+  default: return 999;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Public API — init and error printers
@@ -423,7 +479,7 @@ bool spectrometer_read_raw() {
   if (!spectrometerPrepareLegacyCommand()) return false;
 
   SpectrometerResult result;
-  if (!spectrometerReadInto(&result)) {
+  if (!spectrometerReadIntoImpl(&result)) {
     Serial.print(F("{\"spectrometer\":{\"error\":\"read_failed\"}}"));
     return false;
   }
@@ -438,7 +494,7 @@ bool spectrometer_read() {
   if (!spectrometerPrepareLegacyCommand()) return false;
 
   SpectrometerResult result;
-  if (!spectrometerReadInto(&result)) {
+  if (!spectrometerReadIntoImpl(&result)) {
     Serial.print(F("{\"spectrometer\":{\"error\":\"read_failed\"}}"));
     return false;
   }
@@ -497,7 +553,7 @@ bool spectrometer_read_flash(uint16_t led_current_ma) {
 
   // Dark read
   SpectrometerResult dark, lit;
-  if (!spectrometerReadInto(&dark)) {
+  if (!spectrometerReadIntoImpl(&dark)) {
     Serial.print(F("{\"spectrometer\":{\"error\":\"dark_read_failed\"}}"));
     return false;
   }
@@ -515,7 +571,7 @@ bool spectrometer_read_flash(uint16_t led_current_ma) {
   delay(settle_ms);
 
   // Lit read
-  if (!spectrometerReadInto(&lit)) {
+  if (!spectrometerReadIntoImpl(&lit)) {
     spectrometerSetLedCurrentSilent(0);
     Serial.print(F("{\"spectrometer\":{\"error\":\"lit_read_failed\"}}"));
     return false;
@@ -663,7 +719,7 @@ bool cmd_get_par_raw(float *out_par)
   if (!spectrometerPrepareLegacyCommand()) return false;
 
   SpectrometerResult result;
-  if (!spectrometerReadInto(&result)) {
+  if (!spectrometerReadIntoImpl(&result)) {
     Serial.print(F("{\"spectrometer\":{\"error\":\"read_failed\"}}"));
     return false;
   }
