@@ -16,6 +16,21 @@ bool spectrometer_read();
 bool spectrometer_read_raw();
 bool spectrometer_set_led_current(uint16_t led_current_ma);
 bool spectrometer_read_flash(uint16_t led_current_ma);
+
+// Raw-helper accessors for non-JSON command output
+bool spectrometerReadInto(SpectrometerResult *out);
+uint16_t spectrometerSetLedCurrentSilent(uint16_t led_current_ma);
+uint8_t spectrometerGetAtIME();
+uint16_t spectrometerGetAStep();
+uint8_t spectrometerGetGain();
+
+bool spectrometerSetAtIMEValue(uint8_t atime_value);
+bool spectrometerSetAStepValue(uint16_t astep_value);
+bool spectrometerSetGainValue(int gain_value);
+
+bool setCalibrationSlopeValue(float slope_value);
+bool setCalibrationInterceptValue(float intercept_value);
+
 void spectrometerPrintNotAvailableError();
 void spectrometerPrintUnsupportedDeviceError();
 void spectrometerPrintNotYetImplementedError();
