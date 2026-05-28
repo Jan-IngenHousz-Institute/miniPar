@@ -366,3 +366,24 @@ def plot_data_and_fit(x, y, coeffs, r2, output=None, xlabel="x", ylabel="y"):
         print(f"Saved plot to {output}")
 
     plt.show()
+
+def get_MP_name(port):
+    with serial.Serial(port, baudrate=115200) as ser:
+        ser.flush()
+        ser.write("get_name\n".encode())
+        r = ser.readline()
+        #print(f"Response from device: {r.decode().strip()}")
+        returned_name = r.decode().strip()
+        return returned_name
+
+
+# set Name mini Par
+def set_MP_name(port, name="myPar"):
+    with serial.Serial(port, baudrate=115200) as ser:
+        ser.flush()
+        ser.write(f"set_name,{name}\n".encode())
+        r = ser.readline()
+        #print(f"Response from device: {r.decode().strip()}")
+        returned_name = r.decode().strip()
+        if(returned_name != name):
+            print(f"Error setting {name}: {returned_name} returned")
