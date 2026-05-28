@@ -28,7 +28,7 @@ bool initAS7341() {
   }
   as7341.setATIME(100);
   as7341.setASTEP(999);
-  as7341.setGain(AS7341_GAIN_16X);
+  as7341.setGain(AS7341_GAIN_2X);
   return true;
 }
 

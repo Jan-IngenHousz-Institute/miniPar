@@ -84,7 +84,7 @@ float par_coefficients[18] = {
   1.0/390.0, 
   1.0/590.0, 
   1.0/840.0, 
-  1.0/1350.0, 
+  1.0/1350.0 *2.9 , // ugle hack to get red light right for a non-standard LED, to be replaced with real calibration 
   1.0/1070.0, 
   0,0,0,0,0,0,0,0,0,0}; // per-channel PAR conversion coefficients, indexed 0..channel_count-1. 18 = AS7343 bringup max
 
