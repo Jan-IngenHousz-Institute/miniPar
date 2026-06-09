@@ -45,6 +45,6 @@
 * PAR uinits - µmol/m²/s"
 
 
-FW Design (L. Caracciolo),
+FW Design (L. Grabowski, L. Caracciolo),
 
 HW Design (L. Grabowski)
