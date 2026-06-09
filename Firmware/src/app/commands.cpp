@@ -529,6 +529,62 @@ bool handleCommandText(const String &cmd, bool jsonMode) {
       printRawGetDeviceName();
     }
 
+  } else if (cmd.startsWith("set_spec_coeff")) {
+    // Format: set_spec_coeff,<channel>,<value>
+    int firstComma = cmd.indexOf(',');
+    if (firstComma > 0) {
+      const char *remaining = cmd.c_str() + firstComma + 1;
+      String remainingStr(remaining);
+      int secondComma = remainingStr.indexOf(',');
+      if (secondComma > 0) {
+        const char *argv[] = {
+          remaining,
+          remaining + secondComma + 1
+        };
+        if (jsonMode) {
+          cmd_set_spec_coeff(2, argv);
+        } else {
+          cmd_set_spec_coeff(2, argv);
+        }
+      } else {
+        if (jsonMode) {
+          Serial.print(F("{\"spectrometer_coeff\":{\"error\":\"missing_args\"}}"));
+        } else {
+          Serial.print(F("error:missing_args"));
+        }
+      }
+    } else {
+      if (jsonMode) {
+        Serial.print(F("{\"spectrometer_coeff\":{\"error\":\"missing_args\"}}"));
+      } else {
+        Serial.print(F("error:missing_args"));
+      }
+    }
+
+  } else if (cmd.startsWith("get_spec_coeff")) {
+    // Format: get_spec_coeff or get_spec_coeff,<channel>
+    int comma = cmd.indexOf(',');
+    if (comma > 0) {
+      const char *arg = cmd.c_str() + comma + 1;
+      const char *argv[] = { arg };
+      if (jsonMode) {
+        cmd_get_spec_coeff(1, argv);
+      } else {
+        cmd_get_spec_coeff(1, argv);
+      }
+    } else {
+      // No argument - return all coefficients
+      if (jsonMode) {
+        cmd_get_spec_coeff(0, nullptr);
+      } else {
+        // For raw mode, print all coefficients comma-separated
+        for (int i = 0; i < 18; i++) {
+          if (i > 0) Serial.print(',');
+          Serial.print(par_coefficients[i], 6);
+        }
+      }
+    }
+
   } else if (cmd == "reboot") {
     if (jsonMode) {
       cmd_reboot();

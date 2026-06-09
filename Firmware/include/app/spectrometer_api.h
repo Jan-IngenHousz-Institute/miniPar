@@ -44,6 +44,8 @@ bool set_calibration_slope(int argc, const char *argv[]);
 bool set_calibration_intercept(int argc, const char *argv[]);
 void cmd_set_dev_name(int ar, const char *argv[]);
 char *cmd_get_dev_name();
+bool cmd_set_spec_coeff(int argc, const char *argv[]);
+bool cmd_get_spec_coeff(int argc, const char *argv[]);
 void loadpref();
 
 

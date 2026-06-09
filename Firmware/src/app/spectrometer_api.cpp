@@ -97,12 +97,12 @@ char dev_name[20] = "NoName";
 void loadpref() {
   preferences.begin("par_coeffs", true);
   
-  // for a future phase: if we want to support per-channel PAR coefficients, we can store them in preferences with keys like "ch0", "ch1", etc. For now, just store slope and intercept for a single linear conversion. 
-  //for (int i = 0; i < 18; i++) {
-  //  char key[6];
-  //  snprintf(key, sizeof(key), "ch%d", i);
-  //  par_coefficients[i] = preferences.getFloat(key, par_coefficients[i], 0.0);
-  //}
+  // Load per-channel PAR coefficients from preferences
+  for (int i = 0; i < 18; i++) {
+    char key[6];
+    snprintf(key, sizeof(key), "ch%d", i);
+    par_coefficients[i] = preferences.getFloat(key, par_coefficients[i]);
+  }
   
   slope = preferences.getFloat("slope", 1.0f);
   intercept = preferences.getFloat("intercept", 0.0f);
@@ -797,4 +797,65 @@ void cmd_set_dev_name(int argc, const char* name[])
 char* cmd_get_dev_name()
 {
   return dev_name;
+}
+
+bool cmd_set_spec_coeff(int argc, const char *argv[])
+{
+  if (argc < 2) {
+    Serial.print(F("{\"spectrometer_coeff\":{\"error\":\"missing_args\"}}"));
+    return false;
+  }
+  
+  int channel = atoi(argv[0]);
+  if (channel < 0 || channel >= 18) {
+    Serial.print(F("{\"spectrometer_coeff\":{\"error\":\"channel_out_of_range\"}}"));
+    return false;
+  }
+  
+  float coeff = atof(argv[1]);
+  par_coefficients[channel] = coeff;
+  
+  // Save to preferences
+  preferences.begin("par_coeffs", false);
+  char key[6];
+  snprintf(key, sizeof(key), "ch%d", channel);
+  preferences.putFloat(key, coeff);
+  preferences.end();
+  
+  Serial.print(F("{\"spectrometer_coeff\":{\"channel\":")); 
+  Serial.print(channel);
+  Serial.print(F(",\"value\":"));
+  Serial.print(coeff, 6);
+  Serial.print(F("}}"));
+  return true;
+}
+
+bool cmd_get_spec_coeff(int argc, const char *argv[])
+{
+  if (argc < 1) {
+    // Return all coefficients
+    Serial.print(F("{\"spectrometer_coeffs\":{\"channels\":{")); 
+    for (int i = 0; i < 18; i++) {
+      if (i > 0) Serial.print(',');
+      Serial.print('\"');
+      Serial.print(i);
+      Serial.print(F("\":"));
+      Serial.print(par_coefficients[i], 6);
+    }
+    Serial.print(F("}}}")); 
+    return true;
+  }
+  
+  int channel = atoi(argv[0]);
+  if (channel < 0 || channel >= 18) {
+    Serial.print(F("{\"spectrometer_coeff\":{\"error\":\"channel_out_of_range\"}}"));
+    return false;
+  }
+  
+  Serial.print(F("{\"spectrometer_coeff\":{\"channel\":"));
+  Serial.print(channel);
+  Serial.print(F(",\"value\":"));
+  Serial.print(par_coefficients[channel], 6);
+  Serial.print(F("}}"));
+  return true;
 }
