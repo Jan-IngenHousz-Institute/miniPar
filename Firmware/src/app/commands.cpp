@@ -3,6 +3,7 @@
 #include "HWCDC.h"
 #include "app/debug_api.h"
 #include "app/spectrometer_api.h"
+#include "app/device_config.h"
 #include <esp_system.h>
 
 #include <ArduinoJson.h>
@@ -256,13 +257,20 @@ static void printRawGetDeviceName() {
 // ---------------------------------------------------------------------------
 
 static bool serial_string_init() {
-  Serial.print(F("{\"device_name\":\"PAR meter\",\"device_version\":\"1\",\"device_id\":\"esp32-c3\""));
-  Serial.print(F(",\"device_battery\":\"NaN\",\"device_firmware\":1.001,\"sample\":[{\"protocol_id\":\"NaN\",\"set\":["));
+  uint8_t mac[6];
+  esp_efuse_mac_get_default(mac);
+  char mac_str[18];
+  snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+  Serial.print("{\"device_name\":\"" DEVICE_PRODUCT_NAME "\",\"device_version\":\"" DEVICE_VERSION "\",\"device_id\":\"");
+  Serial.print(mac_str);
+  Serial.print("\",\"device_battery\":\"NaN\",\"device_firmware\":" DEVICE_FIRMWARE_VERSION_STR ",\"sample\":[{\"protocol_id\":\"NaN\",\"set\":[");
   return true;
 }
 
 static bool serial_string_end() {
-  Serial.print(F("]}]}7A1E3AA1"));
+  Serial.print(F("]}]}" DEVICE_FRAME_FOOTER));
   Serial.print('\n');
   return true;
 }
@@ -347,9 +355,9 @@ bool handleJsonProtocol(const String &json) {
 bool handleCommandText(const String &cmd, bool jsonMode) {
   if (cmd == "hello") {
     if (jsonMode) {
-      Serial.print(F("{\"device\":\"MiniPAR\",\"version\":\"1.1\"}"));
+      Serial.print(F("{\"device\":\"" DEVICE_PRODUCT_NAME "\",\"version\":\"" DEVICE_VERSION "\"}"));
     } else {
-      Serial.print(F("MiniPAR,1.1"));
+      Serial.print(F(DEVICE_PRODUCT_NAME "," DEVICE_VERSION "," DEVICE_FIRMWARE_VERSION_STR));
     }
 
   } else if (cmd == "battery") {

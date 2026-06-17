@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include "app/commands.h"
 #include "app/spectrometer_api.h"
+#include "app/device_config.h"
 
 
 String line;
@@ -24,9 +25,9 @@ void resetRx() {
 
 void setup() {
   
-  Serial.begin(115200);
+  Serial.begin(DEVICE_SERIAL_BAUD);
 
-  Wire.begin(3, 4);
+  Wire.begin(DEVICE_I2C_SDA_PIN, DEVICE_I2C_SCL_PIN);
   
   loadpref();
   // Spectrometer detection and backend initialization

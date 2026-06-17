@@ -78,15 +78,17 @@ static const char * const kAs7343ChannelNames[13] = {
 //float par_coefficients[18] = {0}; // per-channel PAR conversion coefficients, indexed 0..channel_count-1. 18 = AS7343 bringup max
 // default values for AS7341 from datasheet
 float par_coefficients[18] = {
-  1.0/55.0, 
-  1.0/110.0, 
-  1.0/214.0, 
-  1.0/390.0, 
-  1.0/590.0, 
-  1.0/840.0, 
-  1.0/1350.0 *2.9 , // ugle hack to get red light right for a non-standard LED, to be replaced with real calibration 
-  1.0/1070.0, 
-  0,0,0,0,0,0,0,0,0,0}; // per-channel PAR conversion coefficients, indexed 0..channel_count-1. 18 = AS7343 bringup max
+      1.0947163691214081,
+      0.09447067722660155,
+      0.19681138419847008,
+      0.16474806285828358,
+      0.1871980220095715,
+      0.12997367405923924,
+      0.16852358846871307,
+      0.06357869488305948,
+      -0.10794982525254658,
+      -0.003041914118767322,
+  0,0,0,0,0,0,0,0}; // per-channel PAR conversion coefficients, indexed 0..channel_count-1. 18 = AS7343 bringup max
 
   Preferences preferences; // for storing persistent settings like PAR coefficients
 
