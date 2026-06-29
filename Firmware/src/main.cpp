@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include "app/commands.h"
 #include "app/spectrometer_api.h"
+#include "app/led_status.h"
 #include "app/device_config.h"
 
 
@@ -24,18 +25,17 @@ void resetRx() {
 }
 
 void setup() {
-  
   Serial.begin(DEVICE_SERIAL_BAUD);
 
+  ledStatusInit();
+
   Wire.begin(DEVICE_I2C_SDA_PIN, DEVICE_I2C_SCL_PIN);
-  
+
   loadpref();
-  // Spectrometer detection and backend initialization
   initSpectrometer();
+  ledStatusSetDetected(spectrometer_available);
+
   Serial.println(F("Ready"));
-
-  
-
 }
 
 
@@ -43,7 +43,8 @@ void setup() {
 
 
 void loop() {
-while (Serial.available() > 0) {
+  ledStatusUpdate();
+  while (Serial.available() > 0) {
     char c = (char)Serial.read();
     if (c == '\r')
       continue;

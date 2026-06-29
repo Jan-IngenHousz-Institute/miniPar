@@ -43,7 +43,7 @@ static void printRawI2CScan() {
   }
 }
 
-static bool printRawSpectrometerChannels(const SpectrometerResult &result, bool corrected) {
+static bool printRawSpectrometerChannels(const SpectrometerResult &result, bool basic_counts) {
   if (result.channel_count == 0) {
     Serial.print(F("error:no_channels"));
     return false;
@@ -51,12 +51,12 @@ static bool printRawSpectrometerChannels(const SpectrometerResult &result, bool 
 
   Serial.print(spectrometerModelName(result.model));
   Serial.print(',');
+  const float divisor = basic_counts ? spectrometerGetBasicCountDivisor() : 1.0f;
   for (uint8_t i = 0; i < result.channel_count; i++) {
     if (i > 0)
       Serial.print(',');
-    if (corrected) {
-      float correctedVal = (float)result.channels[i] * par_coefficients[i];
-      Serial.print(correctedVal, 4);
+    if (basic_counts) {
+      Serial.print((float)result.channels[i] / divisor, 4);
     } else {
       Serial.print(result.channels[i]);
     }
@@ -64,7 +64,7 @@ static bool printRawSpectrometerChannels(const SpectrometerResult &result, bool 
   return true;
 }
 
-static bool printRawSpectrometerRead() {
+  static bool printRawSpectrometerRead() {
   if (!spectrometerPrepareLegacyCommand())
     return false;
 
@@ -76,7 +76,7 @@ static bool printRawSpectrometerRead() {
   return printRawSpectrometerChannels(result, true);
 }
 
-static bool printRawSpectrometerReadRaw() {
+static bool printSpectrometerChannelReadRaw() {
   if (!spectrometerPrepareLegacyCommand())
     return false;
 
@@ -385,7 +385,7 @@ bool handleCommandText(const String &cmd, bool jsonMode) {
     if (jsonMode) {
       spectrometer_read_raw();
     } else {
-      printRawSpectrometerReadRaw();
+      printSpectrometerChannelReadRaw();
     }
 
   } else if (cmd.startsWith("set_led")) {

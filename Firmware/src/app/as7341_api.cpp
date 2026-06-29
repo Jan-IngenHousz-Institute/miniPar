@@ -72,6 +72,10 @@ bool as7341_readInto(SpectrometerResult *out) {
   out->channels[7] = raw[9];
   out->channels[8] = raw[10];
   out->channels[9] = raw[11];
+  // Flag any channel at full-scale (0xFFFF) as saturated
+  for (uint8_t i = 0; i < kResultLen; i++) {
+    if (out->channels[i] == 0xFFFF) out->sat_mask |= (1u << i);
+  }
   return true;
 }
 

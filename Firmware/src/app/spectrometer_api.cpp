@@ -5,6 +5,7 @@
 #include "app/as7341_api.h"
 #include "app/as7343_api.h"
 #include "app/spectrometer_api.h"
+#include "app/led_status.h"
 
 // ---------------------------------------------------------------------------
 // Global state
@@ -75,20 +76,16 @@ static const char * const kAs7343ChannelNames[13] = {
 };
 
 
-//float par_coefficients[18] = {0}; // per-channel PAR conversion coefficients, indexed 0..channel_count-1. 18 = AS7343 bringup max
-// default values for AS7341 from datasheet
+// Per-channel PAR coefficients; pre-scaled for basic_count = raw / gain / int_time.
+// Defaults come from kDefaultParCoefficients (see spectrometer_api.h).
 float par_coefficients[18] = {
-      1.0947163691214081,
-      0.09447067722660155,
-      0.19681138419847008,
-      0.16474806285828358,
-      0.1871980220095715,
-      0.12997367405923924,
-      0.16852358846871307,
-      0.06357869488305948,
-      -0.10794982525254658,
-      -0.003041914118767322,
-  0,0,0,0,0,0,0,0}; // per-channel PAR conversion coefficients, indexed 0..channel_count-1. 18 = AS7343 bringup max
+    kDefaultParCoefficients[0],  kDefaultParCoefficients[1],
+    kDefaultParCoefficients[2],  kDefaultParCoefficients[3],
+    kDefaultParCoefficients[4],  kDefaultParCoefficients[5],
+    kDefaultParCoefficients[6],  kDefaultParCoefficients[7],
+    kDefaultParCoefficients[8],  kDefaultParCoefficients[9],
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+};
 
   Preferences preferences; // for storing persistent settings like PAR coefficients
 
@@ -267,11 +264,14 @@ bool detectAndInitialize(bool promote_pending_to_unknown, const char *reason) {
 // Populates *out from the active backend.  No printing, no guard checks.
 bool spectrometerReadIntoImpl(SpectrometerResult *out) {
   if (!out) return false;
+  bool ok = false;
   switch (spectrometer_model) {
-  case SpectrometerModel::AS7341: return as7341_readInto(out);
-  case SpectrometerModel::AS7343: return as7343_readInto(out);
+  case SpectrometerModel::AS7341: ok = as7341_readInto(out); break;
+  case SpectrometerModel::AS7343: ok = as7343_readInto(out); break;
   default: return false;
   }
+  if (ok) ledStatusSetSaturated(out->sat_mask != 0);
+  return ok;
 }
 
 
@@ -330,6 +330,19 @@ void printChannelsObject(const SpectrometerResult &r) {
 
 bool spectrometerReadInto(SpectrometerResult *out) {
   return spectrometerReadIntoImpl(out);
+}
+
+// Both AS7341 and AS7343 use: reg=0 → 0.5×, reg≥1 → 2^(reg-1)×
+static float gainRegToMultiplier(uint8_t gain_reg) {
+  if (gain_reg == 0) return 0.5f;
+  return static_cast<float>(1u << (gain_reg - 1));
+}
+
+float spectrometerGetBasicCountDivisor() {
+  const float gain     = gainRegToMultiplier(spectrometerGetGain());
+  const uint8_t  atime = spectrometerGetAtIME();
+  const uint16_t astep = spectrometerGetAStep();
+  return gain * (atime + 1.0f) * (astep + 1.0f) * 2.78e-6f;
 }
 
 uint8_t spectrometerGetGain() {
@@ -501,9 +514,9 @@ bool spectrometer_read() {
     return false;
   }
 
-  // Apply per-channel sensitivity correction
   bool use_index_names = false;
   const char * const *names = resolveChannelNames(result, &use_index_names);
+  const float divisor = spectrometerGetBasicCountDivisor();
 
   Serial.print(F("{\"spectrometer\":{\"model\":\""));
   Serial.print(spectrometerModelName(result.model));
@@ -518,8 +531,7 @@ bool spectrometer_read() {
       Serial.print(names[i]);
     }
     Serial.print(F("\":"));
-    float corrected = (float)result.channels[i] * par_coefficients[i];
-    Serial.print(corrected, 4);
+    Serial.print((float)result.channels[i] / divisor, 4);
   }
   Serial.print(F("}}}"));
   return true;
@@ -725,13 +737,13 @@ bool cmd_get_par_raw(float *out_par)
     Serial.print(F("{\"spectrometer\":{\"error\":\"read_failed\"}}"));
     return false;
   }
+  const float divisor = spectrometerGetBasicCountDivisor();
   float par = 0;
-  for (uint8_t i = 0; i < result.channel_count; i++)  
-  {
-    par += result.channels[i] * par_coefficients[i];
+  for (uint8_t i = 0; i < result.channel_count; i++) {
+    par += ((float)result.channels[i] / divisor) * par_coefficients[i];
   }
   *out_par = par;
-  return true;  
+  return true;
 }
 
 bool cmd_get_par(float *out_par)
