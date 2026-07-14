@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include "app/commands.h"
 #include "app/spectrometer_api.h"
+#include "app/bme280_api.h"
 #include "app/led_status.h"
 #include "app/device_config.h"
 
@@ -33,6 +34,7 @@ void setup() {
 
   loadpref();
   initSpectrometer();
+  initBme280();
   ledStatusSetDetected(spectrometer_available);
 
   Serial.println(F("Ready"));

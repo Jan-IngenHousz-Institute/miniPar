@@ -3,6 +3,7 @@
 #include "HWCDC.h"
 #include "app/debug_api.h"
 #include "app/spectrometer_api.h"
+#include "app/bme280_api.h"
 #include "app/device_config.h"
 #include <esp_system.h>
 
@@ -250,6 +251,56 @@ static bool setCalibrationInterceptRaw(const char *arg) {
 
 static void printRawGetDeviceName() {
   Serial.print(cmd_get_dev_name());
+}
+
+static void printRawBme280Status() {
+  if (!bme280.available()) {
+    Serial.print(F("error:not_available"));
+    return;
+  }
+  Serial.print(F("continuous="));
+  Serial.print(bme280.continuousModeEnabled() ? 1 : 0);
+  Serial.print(F(",continuous_active="));
+  Serial.print(bme280.continuousModeActive() ? 1 : 0);
+  Serial.print(F(",temp_comp="));
+  Serial.print(bme280.temperatureCompensation(), 2);
+  Serial.print(F(",temp_en="));
+  Serial.print(bme280.temperatureEnabled() ? 1 : 0);
+  Serial.print(F(",temp_osrs="));
+  Serial.print(static_cast<int>(bme280.temperatureOversampling()));
+  Serial.print(F(",press_en="));
+  Serial.print(bme280.pressureEnabled() ? 1 : 0);
+  Serial.print(F(",press_osrs="));
+  Serial.print(static_cast<int>(bme280.pressureOversampling()));
+  Serial.print(F(",hum_en="));
+  Serial.print(bme280.humidityEnabled() ? 1 : 0);
+  Serial.print(F(",hum_osrs="));
+  Serial.print(static_cast<int>(bme280.humidityOversampling()));
+  Serial.print(F(",iir="));
+  Serial.print(static_cast<int>(bme280.iirFilter()));
+}
+
+// Positional CSV: temperature_c,pressure_hpa,humidity_pct — blank field for a disabled channel.
+static void printRawBme280Reading(const Bme280Reading &r) {
+  if (r.temperature_valid) Serial.print(r.temperature_c, 2);
+  Serial.print(',');
+  if (r.pressure_valid) Serial.print(r.pressure_hpa, 2);
+  Serial.print(',');
+  if (r.humidity_valid) Serial.print(r.humidity_pct, 2);
+}
+
+static bool printRawBme280GetTph() {
+  if (!bme280.available()) {
+    Serial.print(F("error:not_available"));
+    return false;
+  }
+  Bme280Reading reading;
+  if (!bme280ReadRaw(&reading)) {
+    Serial.print(F("error:read_failed"));
+    return false;
+  }
+  printRawBme280Reading(reading);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -591,6 +642,152 @@ bool handleCommandText(const String &cmd, bool jsonMode) {
           Serial.print(par_coefficients[i], 6);
         }
       }
+    }
+
+  } else if (cmd == "bme_status") {
+    if (jsonMode) {
+      cmd_bme280_status();
+    } else {
+      printRawBme280Status();
+    }
+
+  } else if (cmd.startsWith("bme_set_temp_enable")) {
+    int comma = cmd.indexOf(',');
+    const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
+    if (jsonMode) {
+      const char *argv[] = { arg };
+      cmd_bme280_set_temp_enable(comma > 0 ? 1 : 0, argv);
+    } else if (comma > 0 && bme280SetTempEnableRaw(atoi(arg) != 0)) {
+      Serial.print(bme280.temperatureEnabled() ? 1 : 0);
+    } else {
+      Serial.print(F("error:missing_arg"));
+    }
+
+  } else if (cmd.startsWith("bme_set_press_enable")) {
+    int comma = cmd.indexOf(',');
+    const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
+    if (jsonMode) {
+      const char *argv[] = { arg };
+      cmd_bme280_set_press_enable(comma > 0 ? 1 : 0, argv);
+    } else if (comma > 0 && bme280SetPressEnableRaw(atoi(arg) != 0)) {
+      Serial.print(bme280.pressureEnabled() ? 1 : 0);
+    } else {
+      Serial.print(F("error:missing_arg"));
+    }
+
+  } else if (cmd.startsWith("bme_set_hum_enable")) {
+    int comma = cmd.indexOf(',');
+    const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
+    if (jsonMode) {
+      const char *argv[] = { arg };
+      cmd_bme280_set_hum_enable(comma > 0 ? 1 : 0, argv);
+    } else if (comma > 0 && bme280SetHumEnableRaw(atoi(arg) != 0)) {
+      Serial.print(bme280.humidityEnabled() ? 1 : 0);
+    } else {
+      Serial.print(F("error:missing_arg"));
+    }
+
+  } else if (cmd.startsWith("bme_set_temp_oversample")) {
+    int comma = cmd.indexOf(',');
+    const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
+    if (jsonMode) {
+      const char *argv[] = { arg };
+      cmd_bme280_set_temp_oversample(comma > 0 ? 1 : 0, argv);
+    } else if (comma > 0 && bme280SetTempOversampleRaw(atoi(arg))) {
+      Serial.print(static_cast<int>(bme280.temperatureOversampling()));
+    } else {
+      Serial.print(F("error:invalid_arg"));
+    }
+
+  } else if (cmd.startsWith("bme_set_press_oversample")) {
+    int comma = cmd.indexOf(',');
+    const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
+    if (jsonMode) {
+      const char *argv[] = { arg };
+      cmd_bme280_set_press_oversample(comma > 0 ? 1 : 0, argv);
+    } else if (comma > 0 && bme280SetPressOversampleRaw(atoi(arg))) {
+      Serial.print(static_cast<int>(bme280.pressureOversampling()));
+    } else {
+      Serial.print(F("error:invalid_arg"));
+    }
+
+  } else if (cmd.startsWith("bme_set_hum_oversample")) {
+    int comma = cmd.indexOf(',');
+    const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
+    if (jsonMode) {
+      const char *argv[] = { arg };
+      cmd_bme280_set_hum_oversample(comma > 0 ? 1 : 0, argv);
+    } else if (comma > 0 && bme280SetHumOversampleRaw(atoi(arg))) {
+      Serial.print(static_cast<int>(bme280.humidityOversampling()));
+    } else {
+      Serial.print(F("error:invalid_arg"));
+    }
+
+  } else if (cmd.startsWith("bme_set_iir")) {
+    int comma = cmd.indexOf(',');
+    const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
+    if (jsonMode) {
+      const char *argv[] = { arg };
+      cmd_bme280_set_iir(comma > 0 ? 1 : 0, argv);
+    } else if (comma > 0 && bme280SetIIRRaw(atoi(arg))) {
+      Serial.print(static_cast<int>(bme280.iirFilter()));
+    } else {
+      Serial.print(F("error:invalid_arg"));
+    }
+
+  } else if (cmd.startsWith("bme_set_continuous")) {
+    int comma = cmd.indexOf(',');
+    const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
+    if (jsonMode) {
+      const char *argv[] = { arg };
+      cmd_bme280_set_continuous(comma > 0 ? 1 : 0, argv);
+    } else if (comma > 0 && bme280SetContinuousRaw(atoi(arg) != 0)) {
+      Serial.print(bme280.continuousModeEnabled() ? 1 : 0);
+    } else {
+      Serial.print(F("error:missing_arg"));
+    }
+
+  } else if (cmd.startsWith("bme_set_temp_comp")) {
+    int comma = cmd.indexOf(',');
+    const char *arg = (comma > 0) ? cmd.c_str() + comma + 1 : "";
+    if (jsonMode) {
+      const char *argv[] = { arg };
+      cmd_bme280_set_temp_comp(comma > 0 ? 1 : 0, argv);
+    } else if (comma > 0 && bme280.available() && bme280SetTempCompRaw(atof(arg))) {
+      Serial.print(bme280.temperatureCompensation(), 2);
+    } else if (!bme280.available()) {
+      Serial.print(F("error:not_available"));
+    } else {
+      Serial.print(F("error:missing_arg"));
+    }
+
+  } else if (cmd == "bme_get_temp_comp") {
+    if (jsonMode) {
+      cmd_bme280_get_temp_comp();
+    } else if (bme280.available()) {
+      Serial.print(bme280.temperatureCompensation(), 2);
+    } else {
+      Serial.print(F("error:not_available"));
+    }
+
+  } else if (cmd == "bme_get_tph" || cmd == "tph") {
+    if (jsonMode) {
+      cmd_bme280_get_tph();
+    } else {
+      printRawBme280GetTph();
+    }
+
+  } else if (cmd.startsWith("delay_ms")) {
+    int comma = cmd.indexOf(',');
+    long ms = (comma > 0) ? atol(cmd.c_str() + comma + 1) : 0;
+    if (ms < 0) ms = 0;
+    delay(static_cast<uint32_t>(ms));
+    if (jsonMode) {
+      Serial.print(F("{\"delay_ms\":"));
+      Serial.print(ms);
+      Serial.print(F("}"));
+    } else {
+      Serial.print(ms);
     }
 
   } else if (cmd == "reboot") {

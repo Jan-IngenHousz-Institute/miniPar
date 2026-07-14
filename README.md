@@ -13,6 +13,9 @@ Commands are sent as plain text terminated with `\n`. JSON mode is also supporte
     - Response: `MiniPAR,1.1` (plain) / `{"device":"MiniPAR","version":"1.1"}` (JSON)
 * `reboot`
     - Restarts the device. Prints boot info ending with `Ready`.
+* `delay_ms,<value>`
+    - Example: `delay_ms,500`
+    - Blocks for `<value>` milliseconds, then responds with the delay value: `500` (plain) / `{"delay_ms":500}` (JSON). Missing/negative value is treated as `0`.
 * `battery`
     - Response: `NaN` (plain) / `{"battery":"NaN"}` (JSON)
     - Battery measurement not yet implemented.
@@ -26,7 +29,6 @@ Commands are sent as plain text terminated with `\n`. JSON mode is also supporte
 * `spec_flash,<mA>`
     - Example: `spec_flash,10`
     - Dark read → LED on → lit read. Response: `dark:<values>;lit:<values>;diff:<values>` (plain).
-    - LED current capped at 20 mA.
 * `spec_set_atime,<0-255>`
     - Set spectrometer ATIME integration register. Response: the value set.
 * `spec_set_astep,<0-65534>`
@@ -71,6 +73,39 @@ Commands are sent as plain text terminated with `\n`. JSON mode is also supporte
 * `get_name`
     - Response: `{"device_name":"MyDevice"}`
     - Get current device name.
+
+## BME280 (optional temperature/pressure/humidity sensor)
+
+Detected automatically at boot (I2C address `0x76` or `0x77`); all commands below respond with `error:not_available` (plain) / `{"bme280":{"error":"not_available"}}` (JSON) if no BME280 is fitted. Temperature, pressure, and humidity are all enabled by default, at the highest oversampling (x16), IIR filter off, one-shot read mode.
+
+* `bme_status`
+    - Response (plain): `continuous=<0|1>,continuous_active=<0|1>,temp_comp=<value>,temp_en=<0|1>,temp_osrs=<0-5>,press_en=<0|1>,press_osrs=<0-5>,hum_en=<0|1>,hum_osrs=<0-5>,iir=<0-4>`
+    - Response (JSON): `{"bme280_status":{"available":true,"continuous_mode":false,"continuous_active":false,"temperature_compensation_c":0.00,"temperature":{"enabled":true,"oversampling":5},"pressure":{"enabled":true,"oversampling":5},"humidity":{"enabled":true,"oversampling":5},"iir_filter":0}}`
+* `bme_set_temp_enable,<0|1>`
+    - Enable/disable temperature in `bme_get_tph` output. Temperature is still sampled internally regardless (pressure/humidity compensation depend on it) — this only affects reporting.
+* `bme_set_press_enable,<0|1>`
+    - Enable/disable pressure in `bme_get_tph` output.
+* `bme_set_hum_enable,<0|1>`
+    - Enable/disable humidity in `bme_get_tph` output.
+* `bme_set_temp_oversample,<0-5>`
+    - Oversampling: `0`=off (clamped to `1`, since temperature must always be sampled), `1`=x1, `2`=x2, `3`=x4, `4`=x8, `5`=x16 (default).
+* `bme_set_press_oversample,<0-5>`
+    - Same scale as above; `0`=channel skipped by the sensor.
+* `bme_set_hum_oversample,<0-5>`
+    - Same scale as above; `0`=channel skipped by the sensor.
+* `bme_set_iir,<0-4>`
+    - IIR filter coefficient: `0`=off (default), `1`=x2, `2`=x4, `3`=x8, `4`=x16.
+* `bme_set_continuous,<0|1>`
+    - `0` (default) = one-shot: every `bme_get_tph` call takes its own forced-mode measurement.
+    - `1` = continuous: the chip free-runs in normal mode; `bme_get_tph` blocks only on the first call after enabling (waiting for that first conversion), then returns whatever the chip's background cycle last produced.
+* `bme_set_temp_comp,<value>`
+    - Set the temperature compensation offset in °C, added to every raw temperature reading (and folded into the pressure/humidity compensation math) to null out self-heating bias. Persisted to NVS.
+* `bme_get_temp_comp`
+    - Response: current temperature compensation offset in °C.
+* `bme_get_tph` (alias: `tph`)
+    - Response (plain): `<temperature_c>,<pressure_hpa>,<humidity_pct>` — positional CSV, blank field for a disabled channel.
+    - Response (JSON): `{"bme280":{"temperature_c":23.45,"pressure_hpa":1013.25,"humidity_pct":45.20}}` — `null` for a disabled channel.
+    - Behavior depends on `bme_set_continuous`: one-shot mode (default) takes a fresh forced-mode reading every call; continuous mode waits for the first conversion only on the first call after being enabled, then returns the most recent free-running reading on every call after that.
 
 
 # Status LED (GPIO 10)
