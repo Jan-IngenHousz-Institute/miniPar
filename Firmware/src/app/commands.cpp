@@ -44,7 +44,8 @@ static void printRawI2CScan() {
   }
 }
 
-static bool printRawSpectrometerChannels(const SpectrometerResult &result, bool basic_counts) {
+static bool printRawSpectrometerChannels(const SpectrometerResult &result, bool basic_counts,
+                                          float *out_par_raw = nullptr) {
   if (result.channel_count == 0) {
     Serial.print(F("error:no_channels"));
     return false;
@@ -53,15 +54,19 @@ static bool printRawSpectrometerChannels(const SpectrometerResult &result, bool 
   Serial.print(spectrometerModelName(result.model));
   Serial.print(',');
   const float divisor = basic_counts ? spectrometerGetBasicCountDivisor() : 1.0f;
+  float par_raw = 0;
   for (uint8_t i = 0; i < result.channel_count; i++) {
     if (i > 0)
       Serial.print(',');
     if (basic_counts) {
-      Serial.print((float)result.channels[i] / divisor, 4);
+      const float basic_count = (float)result.channels[i] / divisor;
+      Serial.print(basic_count, 4);
+      par_raw += basic_count * par_coefficients[i];
     } else {
       Serial.print(result.channels[i]);
     }
   }
+  if (out_par_raw) *out_par_raw = par_raw;
   return true;
 }
 
@@ -74,7 +79,11 @@ static bool printRawSpectrometerChannels(const SpectrometerResult &result, bool 
     Serial.print(F("error:read_failed"));
     return false;
   }
-  return printRawSpectrometerChannels(result, true);
+  float par_raw = 0;
+  if (!printRawSpectrometerChannels(result, true, &par_raw)) return false;
+  Serial.print(",PAR,");
+  Serial.print(par_raw * getCalibrationSlopeValue() + getCalibrationInterceptValue());
+  return true;
 }
 
 static bool printSpectrometerChannelReadRaw() {
@@ -253,6 +262,41 @@ static void printRawGetDeviceName() {
   Serial.print(cmd_get_dev_name());
 }
 
+// Parses the optional trailing ",<count>" repeat argument shared by "par",
+// "spec", and "tph"/"bme_get_tph". No argument (or count < 1) means 1 repeat.
+static uint16_t parseRepeatCount(const String &cmd) {
+  int comma = cmd.indexOf(',');
+  if (comma < 0) return 1;
+  long val = atol(cmd.c_str() + comma + 1);
+  return (val < 1) ? 1 : (uint16_t)val;
+}
+
+// Calls print_one() `repeats` times, printing each measurement as soon as it
+// is taken. A single repeat is identical to the original un-repeated command
+// (no wrapping), so existing single-shot callers see no format change.
+// Multiple repeats are wrapped as a JSON array in JSON mode, or joined with
+// ';' on the same raw-mode line.
+template <typename Fn>
+static void printRepeated(uint16_t repeats, bool jsonMode, Fn &&print_one) {
+  if (repeats <= 1) {
+    print_one();
+    return;
+  }
+  if (jsonMode) Serial.print('[');
+  for (uint16_t i = 0; i < repeats; i++) {
+    if (i > 0) Serial.print(jsonMode ? ',' : ';');
+    print_one();
+  }
+  if (jsonMode) Serial.print(']');
+}
+
+static void printRawGetCalibration() {
+  Serial.print(F("slope="));
+  Serial.print(getCalibrationSlopeValue(), 6);
+  Serial.print(F(",intercept="));
+  Serial.print(getCalibrationInterceptValue(), 6);
+}
+
 static void printRawBme280Status() {
   if (!bme280.available()) {
     Serial.print(F("error:not_available"));
@@ -425,12 +469,14 @@ bool handleCommandText(const String &cmd, bool jsonMode) {
       printRawI2CScan();
     }
 
-  } else if (cmd == "spec") {
-    if (jsonMode) {
-      spectrometer_read();
-    } else {
-      printRawSpectrometerRead();
-    }
+  } else if (cmd == "spec" || cmd.startsWith("spec,")) {
+    printRepeated(parseRepeatCount(cmd), jsonMode, [&]() {
+      if (jsonMode) {
+        spectrometer_read();
+      } else {
+        printRawSpectrometerRead();
+      }
+    });
 
   } else if (cmd == "spec_raw") {
     if (jsonMode) {
@@ -513,17 +559,19 @@ bool handleCommandText(const String &cmd, bool jsonMode) {
       }
     }
 
-  } else if (cmd == "par") {
-    float par = 0;
-    if (cmd_get_par(&par)) {
-      if (jsonMode) {
-        Serial.print(F("{\"par\":"));
-        Serial.print(par);
-        Serial.print(F("}"));
-      } else {
-        Serial.print(par);
+  } else if (cmd == "par" || cmd.startsWith("par,")) {
+    printRepeated(parseRepeatCount(cmd), jsonMode, [&]() {
+      float par = 0;
+      if (cmd_get_par(&par)) {
+        if (jsonMode) {
+          Serial.print(F("{\"par\":"));
+          Serial.print(par);
+          Serial.print(F("}"));
+        } else {
+          Serial.print(par);
+        }
       }
-    }
+    });
 
   } else if (cmd.startsWith("cal_par_slope")) {
     int comma = cmd.indexOf(',');
@@ -557,6 +605,13 @@ bool handleCommandText(const String &cmd, bool jsonMode) {
       } else {
         Serial.print(F("error:missing_args"));
       }
+    }
+
+  } else if (cmd == "get_cal_par") {
+    if (jsonMode) {
+      cmd_get_calibration();
+    } else {
+      printRawGetCalibration();
     }
 
   } else if (cmd.startsWith("set_name")) {
@@ -770,12 +825,15 @@ bool handleCommandText(const String &cmd, bool jsonMode) {
       Serial.print(F("error:not_available"));
     }
 
-  } else if (cmd == "bme_get_tph" || cmd == "tph") {
-    if (jsonMode) {
-      cmd_bme280_get_tph();
-    } else {
-      printRawBme280GetTph();
-    }
+  } else if (cmd == "bme_get_tph" || cmd.startsWith("bme_get_tph,") ||
+             cmd == "tph" || cmd.startsWith("tph,")) {
+    printRepeated(parseRepeatCount(cmd), jsonMode, [&]() {
+      if (jsonMode) {
+        cmd_bme280_get_tph();
+      } else {
+        printRawBme280GetTph();
+      }
+    });
 
   } else if (cmd.startsWith("delay_ms")) {
     int comma = cmd.indexOf(',');

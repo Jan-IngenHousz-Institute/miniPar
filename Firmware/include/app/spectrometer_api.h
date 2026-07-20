@@ -61,6 +61,8 @@ bool spectrometerSetGainValue(int gain_value);
 
 bool setCalibrationSlopeValue(float slope_value);
 bool setCalibrationInterceptValue(float intercept_value);
+float getCalibrationSlopeValue();
+float getCalibrationInterceptValue();
 
 void spectrometerPrintNotAvailableError();
 void spectrometerPrintUnsupportedDeviceError();
@@ -73,6 +75,7 @@ bool cmd_get_par_raw(float *out_par);
 bool cmd_get_par(float *out_par);
 bool set_calibration_slope(int argc, const char *argv[]);
 bool set_calibration_intercept(int argc, const char *argv[]);
+void cmd_get_calibration();
 void cmd_set_dev_name(int ar, const char *argv[]);
 char *cmd_get_dev_name();
 bool cmd_set_spec_coeff(int argc, const char *argv[]);

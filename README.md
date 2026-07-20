@@ -21,9 +21,11 @@ Commands are sent as plain text terminated with `\n`. JSON mode is also supporte
     - Battery measurement not yet implemented.
 * `i2c_scan`
     - Response: comma-separated list of I2C addresses that ACK (e.g. `0x39`)
-* `spec`
-    - Response: `{"spectrometer":{"model":"AS7341","channels":{"f1_415":1.2345,"f2_445":6.7890,...}}}`
+* `spec[,<count>]`
+    - Response: `{"spectrometer":{"model":"AS7341","channels":{"f1_415":1.2345,"f2_445":6.7890,...},"par":123.45}}` (JSON) / `model,ch0,ch1,...,par` (plain)
     - Returns **basic counts** per channel: `raw_reading / gain / integration_time` (counts per second per gain unit). Values are comparable across different gain and integration-time settings.
+    - Also includes the calculated PAR value (same as the `par` command), computed from this same reading.
+    - `<count>` repeats the measurement that many times (omit, or `1`, for a single reading); each reading is printed as soon as it's taken. With `<count> > 1`: JSON response becomes an array of the single-reading objects (`[{"spectrometer":{...}},{"spectrometer":{...}},...]`); plain response is the single-reading lines joined with `;` on one line.
 * `spec_raw`
     - Response: same format as `spec` but raw unscaled integer counts (no normalization applied).
 * `spec_flash,<mA>`
@@ -41,9 +43,10 @@ Commands are sent as plain text terminated with `\n`. JSON mode is also supporte
     - Example: `set_led,20`
     - Response: `{"spectrometer":{"led_current_ma":20}}` (JSON) / actual mA set (plain)
     - LED current capped at 20 mA.
-* `par`
+* `par[,<count>]`
     - Response: `123.45`
     - PAR value in µmol/m²/s, scaled by linear calibration: `y = a·par_raw + b`
+    - `<count>` repeats the measurement that many times (omit, or `1`, for a single reading); each reading is printed as soon as it's taken. With `<count> > 1`: JSON response becomes an array (`[{"par":1.2},{"par":3.4},...]`); plain response is the values joined with `;` on one line.
 * `par_raw`
     - Response: `1.23`
     - Weighted dot product of **basic counts** (raw / gain / integration_time) and per-channel PAR coefficients. Independent of gain and integration-time settings.
@@ -55,6 +58,9 @@ Commands are sent as plain text terminated with `\n`. JSON mode is also supporte
     - Example: `cal_par_intercept,2.3`
     - Response: `{"calibration":{"intercept":2.3}}`
     - Set the `b` coefficient for `y = ax + b` scaling. Persisted to NVS.
+* `get_cal_par`
+    - Response: `{"calibration":{"slope":10.0,"intercept":2.3}}` (JSON) / `slope=10.0,intercept=2.3` (plain)
+    - Get the current `a` (slope) and `b` (intercept) coefficients for `y = ax + b` scaling.
 * `set_spec_coeff,<channel>,<value>`
     - Example: `set_spec_coeff,0,0.614975`
     - Response: `{"spectrometer_coeff":{"channel":0,"value":0.614975}}`
@@ -102,10 +108,11 @@ Detected automatically at boot (I2C address `0x76` or `0x77`); all commands belo
     - Set the temperature compensation offset in °C, added to every raw temperature reading (and folded into the pressure/humidity compensation math) to null out self-heating bias. Persisted to NVS.
 * `bme_get_temp_comp`
     - Response: current temperature compensation offset in °C.
-* `bme_get_tph` (alias: `tph`)
+* `bme_get_tph[,<count>]` (alias: `tph[,<count>]`)
     - Response (plain): `<temperature_c>,<pressure_hpa>,<humidity_pct>` — positional CSV, blank field for a disabled channel.
     - Response (JSON): `{"bme280":{"temperature_c":23.45,"pressure_hpa":1013.25,"humidity_pct":45.20}}` — `null` for a disabled channel.
     - Behavior depends on `bme_set_continuous`: one-shot mode (default) takes a fresh forced-mode reading every call; continuous mode waits for the first conversion only on the first call after being enabled, then returns the most recent free-running reading on every call after that.
+    - `<count>` repeats the measurement that many times (omit, or `1`, for a single reading); each reading is printed as soon as it's taken. With `<count> > 1`: JSON response becomes an array of the single-reading objects; plain response is the single-reading CSV rows joined with `;` on one line.
 
 
 # Status LED (GPIO 10)

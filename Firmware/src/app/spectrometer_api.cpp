@@ -396,6 +396,9 @@ bool setCalibrationInterceptValue(float intercept_value) {
   return true;
 }
 
+float getCalibrationSlopeValue() { return slope; }
+float getCalibrationInterceptValue() { return intercept; }
+
 // Sets LED current on the active backend, bypassing facade JSON output.
 // Returns quantized actual mA, 0 if disabled, 0xFFFF on error.
 uint16_t spectrometerSetLedCurrentSilent(uint16_t led_current_ma) {
@@ -521,6 +524,7 @@ bool spectrometer_read() {
   Serial.print(F("{\"spectrometer\":{\"model\":\""));
   Serial.print(spectrometerModelName(result.model));
   Serial.print(F("\",\"channels\":{"));
+  float par_raw = 0;
   for (uint8_t i = 0; i < result.channel_count; i++) {
     if (i > 0) Serial.print(',');
     Serial.print('"');
@@ -531,9 +535,13 @@ bool spectrometer_read() {
       Serial.print(names[i]);
     }
     Serial.print(F("\":"));
-    Serial.print((float)result.channels[i] / divisor, 4);
+    const float basic_count = (float)result.channels[i] / divisor;
+    Serial.print(basic_count, 4);
+    par_raw += basic_count * par_coefficients[i];
   }
-  Serial.print(F("}}}"));
+  Serial.print(F("},\"par\":"));
+  Serial.print(par_raw * slope + intercept);
+  Serial.print(F("}}"));
   return true;
 }
 
@@ -776,6 +784,14 @@ bool set_calibration_slope(int argc, const char *argv[])
 
 
 
+
+void cmd_get_calibration() {
+  Serial.print(F("{\"calibration\":{\"slope\":"));
+  Serial.print(slope, 6);
+  Serial.print(F(",\"intercept\":"));
+  Serial.print(intercept, 6);
+  Serial.print(F("}}"));
+}
 
 bool set_calibration_intercept(int argc, const char *argv[])
 {

@@ -5,8 +5,8 @@
 // ---------------------------------------------------------------------------
 #define DEVICE_PRODUCT_NAME     "MiniPAR"
 #define DEVICE_VERSION          "1.1"
-#define DEVICE_FIRMWARE_VERSION      1.04f
-#define DEVICE_FIRMWARE_VERSION_STR  "1.04"
+#define DEVICE_FIRMWARE_VERSION      1.05f
+#define DEVICE_FIRMWARE_VERSION_STR  "1.05"
 
 // device ID is a unique identifier for the device, derived from the the MAC address
 
