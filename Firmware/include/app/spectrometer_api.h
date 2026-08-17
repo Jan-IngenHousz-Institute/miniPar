@@ -55,6 +55,16 @@ uint8_t spectrometerGetGain();
 // Returns gain × integration_time for the current settings (divisor for basic counts)
 float spectrometerGetBasicCountDivisor();
 
+// ADC full scale for the current ATIME/ASTEP. Not a fixed 0xFFFF — see AN000633 p.7.
+uint16_t spectrometerGetFullScale();
+
+// Saturation reporting helpers. Kind is "none" | "analog" | "digital" | "both".
+const char *spectrometerSaturationKind(const SpectrometerResult &result);
+// Prints the per-channel digital mask as four hex digits, e.g. `0x003F`.
+void spectrometerPrintSatMaskHex(const SpectrometerResult &result);
+// Prints `0xMASK,<kind>` for raw (non-JSON) replies.
+void spectrometerPrintSaturation(const SpectrometerResult &result);
+
 bool spectrometerSetAtIMEValue(uint8_t atime_value);
 bool spectrometerSetAStepValue(uint16_t astep_value);
 bool spectrometerSetGainValue(int gain_value);
@@ -68,6 +78,7 @@ void spectrometerPrintNotAvailableError();
 void spectrometerPrintUnsupportedDeviceError();
 void spectrometerPrintNotYetImplementedError();
 void cmd_spectrometer_status();
+void cmd_spectrometer_saturation();
 void cmd_spectrometer_set_atime(int argc, const char *argv[]);
 void cmd_spectrometer_set_astep(int argc, const char *argv[]);
 void cmd_spectrometer_set_gain(int argc, const char *argv[]);

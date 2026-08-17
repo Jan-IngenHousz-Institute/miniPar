@@ -3,6 +3,7 @@
 #include "HWCDC.h"
 #include "app/debug_api.h"
 #include "app/spectrometer_api.h"
+#include "app/as7341_api.h"   // spec_diag bringup accessors — remove with spec_diag
 #include "app/bme280_api.h"
 #include "app/device_config.h"
 #include <esp_system.h>
@@ -83,6 +84,10 @@ static bool printRawSpectrometerChannels(const SpectrometerResult &result, bool 
   if (!printRawSpectrometerChannels(result, true, &par_raw)) return false;
   Serial.print(",PAR,");
   Serial.print(par_raw * getCalibrationSlopeValue() + getCalibrationInterceptValue());
+  // Appended after PAR so existing "model,<channels>,PAR,<value>" prefix parsing is
+  // unaffected. `spec_raw` is deliberately NOT extended — hosts parse it positionally.
+  Serial.print(F(",SAT,"));
+  spectrometerPrintSaturation(result);
   return true;
 }
 
@@ -95,7 +100,26 @@ static bool printSpectrometerChannelReadRaw() {
     Serial.print(F("error:read_failed"));
     return false;
   }
+  // Output format frozen: "<model>,<10 channels>" and nothing else. Hosts split on ','
+  // and index positionally, so appending a field here breaks them. Saturation for this
+  // reading is available from `spec_sat` or `spec`.
   return printRawSpectrometerChannels(result, false);
+}
+
+// `spec_sat` — take a reading and report only whether it is usable.
+static bool printRawSpectrometerSaturation() {
+  if (!spectrometerPrepareLegacyCommand())
+    return false;
+
+  SpectrometerResult result;
+  if (!spectrometerReadInto(&result)) {
+    Serial.print(F("error:read_failed"));
+    return false;
+  }
+  spectrometerPrintSaturation(result);
+  Serial.print(F(",full_scale,"));
+  Serial.print(spectrometerGetFullScale());
+  return true;
 }
 
 static bool printRawSpectrometerReadFlash(uint16_t led_current_ma) {
@@ -133,7 +157,9 @@ static bool printRawSpectrometerReadFlash(uint16_t led_current_ma) {
 
   diff.model = dark.model;
   diff.channel_count = dark.channel_count;
+  // Saturation in either half poisons the difference, so both are carried through.
   diff.sat_mask = dark.sat_mask | lit.sat_mask;
+  diff.sat_flags = (uint8_t)(dark.sat_flags | lit.sat_flags);
   for (uint8_t i = 0; i < dark.channel_count; i++) {
     diff.channels[i] = lit.channels[i] > dark.channels[i] ? lit.channels[i] - dark.channels[i] : 0;
   }
@@ -144,6 +170,9 @@ static bool printRawSpectrometerReadFlash(uint16_t led_current_ma) {
   printRawSpectrometerChannels(lit, false);
   Serial.print(F(";diff:"));
   printRawSpectrometerChannels(diff, false);
+  // Previously computed and then thrown away, which hid a clipped flash entirely.
+  Serial.print(F(";sat:"));
+  spectrometerPrintSaturation(diff);
   return true;
 }
 
@@ -212,6 +241,65 @@ static bool printRawSpectrometerSetGain(const char *arg) {
     return false;
   }
   Serial.print(val);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// `spec_diag` — TEMPORARY AS7341 saturation bringup aid.
+//
+// Dumps the raw status registers around one reading without interpreting them, so the
+// ASAT bit positions in STATUS2 can be confirmed on hardware rather than inherited from
+// the AS7343 sibling. Follows the same delete-me discipline as AS7343_BRINGUP_RAW_DUMP.
+//
+// Run under four conditions and compare the bytes:
+//   dark / room light / over-driven (LED close, gain 512x) / over-driven violet-blue only
+// The last one is decisive: if STATUS (0x93) shows a bit when only F1-F4 clip, then a
+// single latched check could replace the per-pass STATUS2 reads in as7341_readInto().
+//
+// DELETE this command, its dispatch entry, and the as7341_*Diag* accessors once the bit
+// positions are confirmed and recorded in as7341_api.cpp.
+// ---------------------------------------------------------------------------
+static bool printRawSpectrometerDiag() {
+  if (!spectrometerPrepareLegacyCommand())
+    return false;
+  if (spectrometer_model != SpectrometerModel::AS7341) {
+    Serial.print(F("error:as7341_only"));
+    return false;
+  }
+
+  SpectrometerResult result;
+  if (!spectrometerReadInto(&result)) {
+    Serial.print(F("error:read_failed"));
+    return false;
+  }
+
+  uint8_t status = 0, status2_low = 0, status2_high = 0, intenab = 0;
+  as7341_getLastStatusBytes(&status, &status2_low, &status2_high);
+  as7341_readDiagRegister(as7341_intenabRegister(), &intenab);
+
+  Serial.print(F("status=0x"));
+  Serial.print(status, HEX);
+  Serial.print(F(",status2_low=0x"));
+  Serial.print(status2_low, HEX);
+  Serial.print(F(",status2_high=0x"));
+  Serial.print(status2_high, HEX);
+  Serial.print(F(",intenab=0x"));
+  Serial.print(intenab, HEX);
+  Serial.print(F(",gain="));
+  Serial.print(spectrometerGetGain());
+  Serial.print(F(",atime="));
+  Serial.print(spectrometerGetAtIME());
+  Serial.print(F(",astep="));
+  Serial.print(spectrometerGetAStep());
+  Serial.print(F(",full_scale="));
+  Serial.print(spectrometerGetFullScale());
+  Serial.print(F(",sat="));
+  spectrometerPrintSaturation(result);
+  Serial.print(F(",counts:"));
+  for (uint8_t i = 0; i < result.channel_count; i++) {
+    if (i > 0) Serial.print(',');
+    Serial.print(result.channels[i]);
+  }
   return true;
 }
 
@@ -484,6 +572,17 @@ bool handleCommandText(const String &cmd, bool jsonMode) {
     } else {
       printSpectrometerChannelReadRaw();
     }
+
+  } else if (cmd == "spec_sat") {
+    if (jsonMode) {
+      cmd_spectrometer_saturation();
+    } else {
+      printRawSpectrometerSaturation();
+    }
+
+  } else if (cmd == "spec_diag") {
+    // TEMPORARY bringup aid — delete with printRawSpectrometerDiag().
+    printRawSpectrometerDiag();
 
   } else if (cmd.startsWith("set_led")) {
     int ledCurrent = 10; // default LED current in mA

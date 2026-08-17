@@ -270,7 +270,7 @@ bool spectrometerReadIntoImpl(SpectrometerResult *out) {
   case SpectrometerModel::AS7343: ok = as7343_readInto(out); break;
   default: return false;
   }
-  if (ok) ledStatusSetSaturated(out->sat_mask != 0);
+  if (ok) ledStatusSetSaturated(spectrometerResultSaturated(*out));
   return ok;
 }
 
@@ -323,7 +323,13 @@ void printChannelsObject(const SpectrometerResult &r) {
     Serial.print(F("\":"));
     Serial.print(r.channels[i]);
   }
-  Serial.print(F("}}"));
+  Serial.print(F("},\"saturated\":"));
+  Serial.print(spectrometerResultSaturated(r) ? F("true") : F("false"));
+  Serial.print(F(",\"sat_mask\":\""));
+  spectrometerPrintSatMaskHex(r);
+  Serial.print(F("\",\"sat_kind\":\""));
+  Serial.print(spectrometerSaturationKind(r));
+  Serial.print(F("\"}"));
 }
 
 } // namespace
@@ -343,6 +349,40 @@ float spectrometerGetBasicCountDivisor() {
   const uint8_t  atime = spectrometerGetAtIME();
   const uint16_t astep = spectrometerGetAStep();
   return gain * (atime + 1.0f) * (astep + 1.0f) * 2.78e-6f;
+}
+
+// ADC full scale for the current exposure. AN000633 p.7 footnote 1: "TINT directly
+// determines the Full Scale Range and saturation" — a channel can top out well below
+// 0xFFFF at short integration times. uint32_t is load-bearing: (255+1)*(65534+1)
+// overflows 16 bits.
+uint16_t spectrometerGetFullScale() {
+  const uint32_t full_scale =
+      (uint32_t)(spectrometerGetAtIME() + 1u) * (uint32_t)(spectrometerGetAStep() + 1u);
+  return full_scale >= 0xFFFFu ? 0xFFFFu : (uint16_t)full_scale;
+}
+
+// Always four hex digits ("0x003F"), so a host never has to guess the width.
+void spectrometerPrintSatMaskHex(const SpectrometerResult &result) {
+  Serial.print(F("0x"));
+  if (result.sat_mask < 0x1000) Serial.print('0');
+  if (result.sat_mask < 0x0100) Serial.print('0');
+  if (result.sat_mask < 0x0010) Serial.print('0');
+  Serial.print(result.sat_mask, HEX);
+}
+
+void spectrometerPrintSaturation(const SpectrometerResult &result) {
+  spectrometerPrintSatMaskHex(result);
+  Serial.print(',');
+  Serial.print(spectrometerSaturationKind(result));
+}
+
+const char *spectrometerSaturationKind(const SpectrometerResult &result) {
+  const bool analog  = (result.sat_flags & SAT_ANALOG) != 0;
+  const bool digital = (result.sat_flags & SAT_DIGITAL) != 0;
+  if (analog && digital) return "both";
+  if (analog)  return "analog";
+  if (digital) return "digital";
+  return "none";
 }
 
 uint8_t spectrometerGetGain() {
@@ -541,7 +581,14 @@ bool spectrometer_read() {
   }
   Serial.print(F("},\"par\":"));
   Serial.print(par_raw * slope + intercept);
-  Serial.print(F("}}"));
+  // A saturated channel silently inflates par, so the flag travels with the value.
+  Serial.print(F(",\"saturated\":"));
+  Serial.print(spectrometerResultSaturated(result) ? F("true") : F("false"));
+  Serial.print(F(",\"sat_mask\":\""));
+  spectrometerPrintSatMaskHex(result);
+  Serial.print(F("\",\"sat_kind\":\""));
+  Serial.print(spectrometerSaturationKind(result));
+  Serial.print(F("\"}}"));
   return true;
 }
 
@@ -606,7 +653,9 @@ bool spectrometer_read_flash(uint16_t led_current_ma) {
   SpectrometerResult diff;
   diff.model         = dark.model;
   diff.channel_count = dark.channel_count;
+  // Saturation in either half poisons the difference, so both are carried through.
   diff.sat_mask      = dark.sat_mask | lit.sat_mask;
+  diff.sat_flags     = (uint8_t)(dark.sat_flags | lit.sat_flags);
   for (uint8_t i = 0; i < dark.channel_count; i++) {
     diff.channels[i] =
         lit.channels[i] > dark.channels[i] ? lit.channels[i] - dark.channels[i] : 0;
@@ -621,6 +670,27 @@ bool spectrometer_read_flash(uint16_t led_current_ma) {
   printChannelsObject(diff);
   Serial.print(F("}"));
   return true;
+}
+
+// `spec_sat` in JSON mode: take a reading, report only whether it is usable.
+void cmd_spectrometer_saturation() {
+  if (!spectrometerPrepareLegacyCommand()) return;
+
+  SpectrometerResult result;
+  if (!spectrometerReadIntoImpl(&result)) {
+    Serial.print(F("{\"spectrometer_saturation\":{\"error\":\"read_failed\"}}"));
+    return;
+  }
+
+  Serial.print(F("{\"spectrometer_saturation\":{\"saturated\":"));
+  Serial.print(spectrometerResultSaturated(result) ? F("true") : F("false"));
+  Serial.print(F(",\"sat_mask\":\""));
+  spectrometerPrintSatMaskHex(result);
+  Serial.print(F("\",\"sat_kind\":\""));
+  Serial.print(spectrometerSaturationKind(result));
+  Serial.print(F("\",\"full_scale\":"));
+  Serial.print(spectrometerGetFullScale());
+  Serial.print(F("}}"));
 }
 
 void cmd_spectrometer_status() {
