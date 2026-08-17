@@ -76,7 +76,7 @@ static const char * const kAs7343ChannelNames[13] = {
 };
 
 
-// Per-channel PAR coefficients; pre-scaled for basic_count = raw / gain / int_time.
+// Per-channel PAR coefficients; pre-scaled for basic_count = raw / gain / int_time_ms.
 // Defaults come from kDefaultParCoefficients (see spectrometer_api.h).
 float par_coefficients[18] = {
     kDefaultParCoefficients[0],  kDefaultParCoefficients[1],
@@ -94,15 +94,35 @@ float intercept = 0;
 char dev_name[20] = "NoName";
 
 void loadpref() {
-  preferences.begin("par_coeffs", true);
-  
+  // Opened read-write: a units migration may have to write coefficients back.
+  preferences.begin("par_coeffs", false);
+
+  // Basic counts moved from per-second to per-millisecond in firmware 1.06, which makes
+  // them 1000× smaller. Coefficients a host uploaded before that were fitted against the
+  // per-second convention, so without this rescale every already-calibrated device would
+  // start reporting PAR 1000× low. Runs once; the stamp below makes it idempotent.
+  const bool migrate_to_per_ms =
+      preferences.getUInt(kParCoeffUnitsKey, 0) < kParCoeffUnitsVersion;
+
   // Load per-channel PAR coefficients from preferences
   for (int i = 0; i < 18; i++) {
     char key[6];
     snprintf(key, sizeof(key), "ch%d", i);
-    par_coefficients[i] = preferences.getFloat(key, par_coefficients[i]);
+    // No stored value means kDefaultParCoefficients applies, and those are already
+    // per-ms — migrating them would scale the defaults twice.
+    if (!preferences.isKey(key)) continue;
+    float coeff = preferences.getFloat(key, par_coefficients[i]);
+    if (migrate_to_per_ms) {
+      coeff *= kBasicCountPerSecondToPerMs;
+      preferences.putFloat(key, coeff);
+    }
+    par_coefficients[i] = coeff;
   }
-  
+  if (migrate_to_per_ms) {
+    preferences.putUInt(kParCoeffUnitsKey, kParCoeffUnitsVersion);
+  }
+
+
   slope = preferences.getFloat("slope", 1.0f);
   intercept = preferences.getFloat("intercept", 0.0f);
   if(preferences.isKey("name"))
@@ -344,11 +364,14 @@ static float gainRegToMultiplier(uint8_t gain_reg) {
   return static_cast<float>(1u << (gain_reg - 1));
 }
 
+// AN000633 §2.1: basic_count = raw / (gain × t_int), with t_int in **milliseconds**.
+// The tick is kAs7341AStepTickMs, so the result is directly comparable to the host-side
+// basic_counts() in Scripts/as7341_calibrate.py — no 1000× fudge on either side.
 float spectrometerGetBasicCountDivisor() {
   const float gain     = gainRegToMultiplier(spectrometerGetGain());
   const uint8_t  atime = spectrometerGetAtIME();
   const uint16_t astep = spectrometerGetAStep();
-  return gain * (atime + 1.0f) * (astep + 1.0f) * 2.78e-6f;
+  return gain * (atime + 1.0f) * (astep + 1.0f) * kAs7341AStepTickMs;
 }
 
 // ADC full scale for the current exposure. AN000633 p.7 footnote 1: "TINT directly

@@ -41,9 +41,14 @@ ASTEP_TICK_MS = 2.78e-3
 
 #: Dark offset in ams basic-count units, from the workbook sheet
 #: 'used Correction Values' ('Offset, measured with sensor', row 15, cols O..X).
+# OFFSET_BASIC = pd.Series(
+#     [0.001970, 0.007249, 0.003194, 0.001315, 0.001468,
+#      0.001858, 0.001763, 0.005217, 0.003000, 0.001000],
+#     index=CHANNELS, name='offset_basic')
+
 OFFSET_BASIC = pd.Series(
-    [0.001970, 0.007249, 0.003194, 0.001315, 0.001468,
-     0.001858, 0.001763, 0.005217, 0.003000, 0.001000],
+    [0., 0., 0., 0., 0.,
+     0., 0., 0., 0., 0.],
     index=CHANNELS, name='offset_basic')
 
 #: Device-independent spectral coefficient: mean of the per-device factors

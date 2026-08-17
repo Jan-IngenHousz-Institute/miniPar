@@ -5,8 +5,11 @@
 // ---------------------------------------------------------------------------
 #define DEVICE_PRODUCT_NAME     "MiniPAR"
 #define DEVICE_VERSION          "1.1"
-#define DEVICE_FIRMWARE_VERSION      1.05f
-#define DEVICE_FIRMWARE_VERSION_STR  "1.05"
+// 1.06 — `spec` basic counts switched from per-second to per-millisecond (ams AN000633
+// §2.1). `par`/`par_raw` are unchanged: the coefficients rescale with them. A host that
+// interprets `spec` values must gate on this version; `hello` reports it.
+#define DEVICE_FIRMWARE_VERSION      1.06f
+#define DEVICE_FIRMWARE_VERSION_STR  "1.06"
 
 // device ID is a unique identifier for the device, derived from the the MAC address
 

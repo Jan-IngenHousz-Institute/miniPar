@@ -15,13 +15,26 @@ extern float par_coefficients[18]; // per-channel PAR conversion coefficients, i
 static constexpr uint8_t  kAs7341DefaultAtIME         = 100;
 static constexpr uint16_t kAs7341DefaultAStep          = 999;
 static constexpr float    kAs7341DefaultGainMultiplier  = 2.0f;   // AS7341_GAIN_2X = 2×
-static constexpr float    kAs7341DefaultIntTimeS        =
-    (kAs7341DefaultAtIME + 1.0f) * (kAs7341DefaultAStep + 1.0f) * 2.78e-6f;
+// One ASTEP tick is 2.78 µs. Expressed in **milliseconds**, because basic counts follow
+// the ams AN000633 §2.1 convention (integration time in ms) — the same units every host
+// script in this repo uses. Was 2.78e-6 (seconds) up to firmware 1.05, which made
+// firmware basic counts 1000× the host ones; see CALIBRATION.md.
+static constexpr float    kAs7341AStepTickMs           = 2.78e-3f;
+static constexpr float    kAs7341DefaultIntTimeMs       =
+    (kAs7341DefaultAtIME + 1.0f) * (kAs7341DefaultAStep + 1.0f) * kAs7341AStepTickMs;
 // Scaling factor: old raw-based coeff × this = basic-count-based coeff at default settings
 static constexpr float    kAs7341BasicCountScale        =
-    kAs7341DefaultGainMultiplier * kAs7341DefaultIntTimeS;
+    kAs7341DefaultGainMultiplier * kAs7341DefaultIntTimeMs;
 
-// Default PAR coefficients for AS7341, pre-scaled for basic_count = raw / gain / int_time.
+// A coefficient fitted against per-second basic counts × this = the per-ms equivalent.
+// Used once, to migrate NVS-stored coefficients written by firmware ≤ 1.05.
+static constexpr float    kBasicCountPerSecondToPerMs   = 1000.0f;
+// Units convention of the coefficients in the "par_coeffs" NVS namespace.
+// 0/absent = per-second (firmware ≤ 1.05), 1 = per-ms. loadpref() migrates on mismatch.
+static constexpr uint32_t kParCoeffUnitsVersion         = 1;
+static constexpr char     kParCoeffUnitsKey[]           = "units_ver";
+
+// Default PAR coefficients for AS7341, pre-scaled for basic_count = raw / gain / int_time_ms.
 // Original calibration values multiplied by kAs7341BasicCountScale so that at the default
 // gain/integration settings the PAR result is identical to the original calibration.
 static constexpr float kDefaultParCoefficients[18] = {
@@ -52,7 +65,7 @@ uint16_t spectrometerSetLedCurrentSilent(uint16_t led_current_ma);
 uint8_t spectrometerGetAtIME();
 uint16_t spectrometerGetAStep();
 uint8_t spectrometerGetGain();
-// Returns gain × integration_time for the current settings (divisor for basic counts)
+// Returns gain × integration_time_ms for the current settings (divisor for basic counts)
 float spectrometerGetBasicCountDivisor();
 
 // ADC full scale for the current ATIME/ASTEP. Not a fixed 0xFFFF — see AN000633 p.7.
