@@ -1,0 +1,32 @@
+{
+  "channels": [
+    "f1_415",
+    "f2_445",
+    "f3_480",
+    "f4_515",
+    "f5_555",
+    "f6_590",
+    "f7_630",
+    "f8_680",
+    "clear",
+    "nir"
+  ],
+  "w": [
+    40.80630255071444,
+    42.17801163395037,
+    69.84936470711112,
+    85.87486912191122,
+    61.89558876412609,
+    43.74239901865681,
+    51.571380123564126,
+    14.70546139981266,
+    19.308319645358843,
+    -27.25260028429117
+  ],
+  "lambda": 0.03,
+  "prior_is_placeholder": true,
+  "n_samples": 462,
+  "n_devices": 6,
+  "lodo_median_pct": 4.376831844741021,
+  "fit": "lsq_linear, basic_counts vs tia_par, all samples, F1-F8 >= 0, clear/nir free, intercept discarded, shrunk toward W_TARGET at lambda=0.03"
+}

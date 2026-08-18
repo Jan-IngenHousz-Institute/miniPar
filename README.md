@@ -67,7 +67,7 @@ Commands are sent as plain text terminated with `\n`. JSON mode is also supporte
     - Response: `{"spectrometer_coeff":{"channel":0,"value":0.614975}}`
     - Set per-channel PAR coefficient (channel 0–17). Coefficients are applied to **basic counts** (raw / gain / integration_time_ms), so they must account for the desired normalization. Persisted to NVS.
     - Default coefficients are pre-scaled for the default AS7341 settings (ATIME=100, ASTEP=999, GAIN=2×); re-derive from calibration if defaults are changed.
-    - Since firmware 1.06 these are per-millisecond basic counts, matching `basic_counts()` in [Scripts/as7341_calibrate.py](Scripts/as7341_calibrate.py) — upload host-fitted coefficients directly, with no factor of 1000. Coefficients written by an earlier firmware are rescaled once on the first 1.06 boot.
+    - Since firmware 1.06 these are per-millisecond basic counts, matching `basic_counts()` in [new_calibration_miniPAR/as7341_calibrate.py](new_calibration_miniPAR/as7341_calibrate.py) — upload host-fitted coefficients directly, with no factor of 1000. Coefficients written by an earlier firmware are rescaled once on the first 1.06 boot.
 * `get_spec_coeff`
     - Response: `{"spectrometer_coeffs":{"channels":{"0":0.614975,"1":0.053037,...}}}`
     - Get all 18 per-channel PAR coefficients.
@@ -134,7 +134,7 @@ Saturation is checked automatically on every spectrometer read (`spec`, `spec_ra
 
 * Command terminator: `\n` (`\r` is ignored)
 * PAR units: µmol/m²/s
-* **Basic counts**: `raw_reading / gain / integration_time_ms`, where `integration_time_ms = (ATIME+1) × (ASTEP+1) × 2.78e-3 ms`. Used by `spec`, `par`, and `par_raw` — values are gain/integration-time independent. This is the ams AN000633 §2.1 convention; firmware ≤ 1.05 used seconds instead, see [CALIBRATION.md](CALIBRATION.md#units-migration-firmware-105--106).
+* **Basic counts**: `raw_reading / gain / integration_time_ms`, where `integration_time_ms = (ATIME+1) × (ASTEP+1) × 2.78e-3 ms`. Used by `spec`, `par`, and `par_raw` — values are gain/integration-time independent. This is the ams AN000633 §2.1 convention; firmware ≤ 1.05 used seconds instead, see [CALIBRATION.md](new_calibration_miniPAR/CALIBRATION.md#units-migration-firmware-105--106).
 * **Default AS7341 settings**: ATIME=100, ASTEP=999, GAIN=2× (integration time ≈ 280.8 ms). Per-channel PAR coefficients stored in NVS are calibrated for basic counts at these defaults.
 
 

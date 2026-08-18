@@ -26,8 +26,8 @@ x = raw / (gain × ATIME × ASTEP × tick)
 Both sides use the tick in **milliseconds**, so a coefficient vector fitted on host basic
 counts goes into firmware unscaled:
 
-- Host: `basic_counts()` in [Scripts/as7341_calibrate.py](Scripts/as7341_calibrate.py) — `ASTEP_TICK_MS = 2.78e-3`
-- Firmware: `spectrometerGetBasicCountDivisor()` in [Firmware/src/app/spectrometer_api.cpp](Firmware/src/app/spectrometer_api.cpp#L347) — `kAs7341AStepTickMs = 2.78e-3f`
+- Host: `basic_counts()` in [as7341_calibrate.py](as7341_calibrate.py) — `ASTEP_TICK_MS = 2.78e-3`
+- Firmware: `spectrometerGetBasicCountDivisor()` in [../Firmware/src/app/spectrometer_api.cpp](../Firmware/src/app/spectrometer_api.cpp#L347) — `kAs7341AStepTickMs = 2.78e-3f`
 
 ⚠️ **Firmware ≤ 1.05 used the tick in seconds**, making its basic counts 1000× the host
 ones; coefficients fitted on host units had to be divided by 1000 first. Since 1.06 that
@@ -50,12 +50,12 @@ per device, then averaged over 3 devices (channel spread 1.4–9.7%), so no per-
 lookup is needed at deployment.
 
 `CM` is the ams Golden-Device spectral reconstruction matrix, sheet
-`used Correction Values` of [Firmware/docs/AS7341_AD000198_3-00.xlsx](Firmware/docs/AS7341_AD000198_3-00.xlsx)
+`used Correction Values` of [../Firmware/docs/AS7341_AD000198_3-00.xlsx](../Firmware/docs/AS7341_AD000198_3-00.xlsx)
 (rows 6–726 = 380–1100 nm at 1 nm, columns B–K = F1…F8, Clear, NIR). The workbook
 applies it to §2.2 output, i.e. **before** any per-channel spectral coefficient.
 
-- **Notebook:** [Scripts/spectralCalibration_miniPAR_LR1-B.ipynb](Scripts/spectralCalibration_miniPAR_LR1-B.ipynb) — `SPECTRAL_COEF` is computed in the §2.4 cell
-- **Deployable module:** [Scripts/as7341_calibrate.py](Scripts/as7341_calibrate.py) — `calibrated_raw()` implements §2.1 → §2.2 → §2.4 with the constants baked in
+- **Notebook:** [spectralCalibration_miniPAR_LR1-B.ipynb](spectralCalibration_miniPAR_LR1-B.ipynb) — `SPECTRAL_COEF` is computed in the §2.4 cell
+- **Deployable module:** [as7341_calibrate.py](as7341_calibrate.py) — `calibrated_raw()` implements §2.1 → §2.2 → §2.4 with the constants baked in
 
 Do **not** use the workbook's own row-26 correction vector (1.028 … 1.269). That is the
 ams demo unit's golden-diode balance; applied to miniPAR data it inflates Clear against
@@ -80,15 +80,21 @@ Fitted once, from the pooled multi-source dataset (462 samples, 6 devices, spann
 daylight, canopy, gel filters, office and LED panels). This is where all 10 degrees of
 freedom belong, because only a spectrally diverse set can identify them.
 
-- **Notebook:** [Scripts/regression_PAR_miniPAR.ipynb](Scripts/regression_PAR_miniPAR.ipynb) — the `basic_counts` regression cell fits `w`; the cell below it refits on all samples, validates leave-one-device-out, writes `Scripts/par_coeffs_fleet.json` and prints the C array
-- **Firmware slot:** `kDefaultParCoefficients` in [Firmware/include/app/spectrometer_api.h](Firmware/include/app/spectrometer_api.h#L27), loaded into `par_coefficients[]`
+- **Notebook:** [regression_PAR_miniPAR.ipynb](regression_PAR_miniPAR.ipynb) — the `basic_counts` regression cell fits `w`; the cell below it refits on all samples, validates leave-one-device-out, writes `par_coeffs_fleet.json` and prints the C array
+- **Firmware slot:** `kDefaultParCoefficients` in [../Firmware/include/app/spectrometer_api.h](../Firmware/include/app/spectrometer_api.h#L27), loaded into `par_coefficients[]`
 
 ### Tier 3 — per-device `a`, `b`
 
 Fitted at onboarding from an **intensity sweep** against the Li-250A. A sweep on one
 source identifies a scale and an offset — two parameters — and nothing more.
 
-- **Firmware slot:** `slope` / `intercept`, applied at [spectrometer_api.cpp:584](Firmware/src/app/spectrometer_api.cpp#L584)
+- **Firmware slot:** `slope` / `intercept`, applied at [spectrometer_api.cpp:584](../Firmware/src/app/spectrometer_api.cpp#L584)
+- **Notebook:** [tier3_calibration_miniPAR_DCsource.ipynb](tier3_calibration_miniPAR_DCsource.ipynb)
+  — LED panel on the KIPRIM supply: preflight that tier 2 is the fleet `w`, headroom check,
+  up/down current sweep, fit on the up leg and validate on the held-out down leg, upload,
+  re-check at unfitted levels, one record per run under `data/tier3/`
+- **Manual variant:** [../Scripts/MiniParManualCalibration.ipynb](../Scripts/MiniParManualCalibration.ipynb)
+  — three points typed in by hand, no DC supply or automated reference
 
 The tier-2 intercept is discarded on export. Composing the tiers gives
 `PAR = a·(w·x) + (a·b₀ + b)`, so `b₀` is absorbed by tier 3's intercept; fit with an
@@ -96,7 +102,7 @@ intercept so `w` is unbiased, then keep only `w`.
 
 ### Firmware already implements this
 
-[spectrometer_api.cpp:578-584](Firmware/src/app/spectrometer_api.cpp#L578-L584):
+[spectrometer_api.cpp:578-584](../Firmware/src/app/spectrometer_api.cpp#L578-L584):
 
 ```cpp
 const float basic_count = (float)result.channels[i] / divisor;   // tier 1
@@ -207,7 +213,7 @@ better calibrator, LEDs are the more repeatable one:
 ## Current state and open items
 
 - **`kDefaultParCoefficients` is stale and not reproducible from this repo.** The values
-  in [spectrometer_api.h:27](Firmware/include/app/spectrometer_api.h#L27) were fitted on
+  in [spectrometer_api.h:27](../Firmware/include/app/spectrometer_api.h#L27) were fitted on
   **raw** counts at one fixed gain/ATIME/ASTEP and back-converted with the
   `kAs7341BasicCountScale` retrofit multiplier. They trace to the legacy per-device flow;
   the file cell 28 of that notebook loads (`calibration_coeffs_par_window.json`) is not
@@ -239,18 +245,19 @@ better calibrator, LEDs are the more repeatable one:
 
 | notebook | role |
 |---|---|
-| [Scripts/spectralCalibration_miniPAR_LR1-B.ipynb](Scripts/spectralCalibration_miniPAR_LR1-B.ipynb) | **goal A** — derives `SPECTRAL_COEF` against LR1-B |
-| [Scripts/regression_PAR_miniPAR.ipynb](Scripts/regression_PAR_miniPAR.ipynb) | **goal B** — compares PAR models, fits and exports tier-2 `w` |
-| [Scripts/acquisition_multi_stable_minipar_lr1b.ipynb](Scripts/acquisition_multi_stable_minipar_lr1b.ipynb) | acquisition — multi-device + LR1-B + Li-250A, randomised settings → `data/multi_par_spec_lr1b.csv` |
-| [Scripts/acquisition_multi_stabe_minipar.ipynb](Scripts/acquisition_multi_stabe_minipar.ipynb) | acquisition — multi-device + Li-250A → `data/multi_par_spec.csv` |
-| [Scripts/calibrate_spec_notebook.ipynb](Scripts/calibrate_spec_notebook.ipynb) | **superseded** — legacy per-device 10-coefficient fit on raw counts, uploaded via `set_spec_coeff`. Wrong tier and missing tier 1; kept for the serial upload/validation cells only |
+| [spectralCalibration_miniPAR_LR1-B.ipynb](spectralCalibration_miniPAR_LR1-B.ipynb) | **goal A** — derives `SPECTRAL_COEF` against LR1-B |
+| [regression_PAR_miniPAR.ipynb](regression_PAR_miniPAR.ipynb) | **goal B** — compares PAR models, fits and exports tier-2 `w` |
+| [tier3_calibration_miniPAR_DCsource.ipynb](tier3_calibration_miniPAR_DCsource.ipynb) | **tier 3** — per-device `a`, `b` from an LED-panel intensity sweep against the Li-250A |
+| [acquisition_multi_stable_minipar_lr1b.ipynb](acquisition_multi_stable_minipar_lr1b.ipynb) | acquisition — multi-device + LR1-B + Li-250A, randomised settings → `data/multi_par_spec_lr1b.csv` |
+| [acquisition_multi_stabe_minipar.ipynb](acquisition_multi_stabe_minipar.ipynb) | acquisition — multi-device + Li-250A → `data/multi_par_spec.csv` |
+| [../Scripts/calibrate_spec_notebook.ipynb](../Scripts/calibrate_spec_notebook.ipynb) | **superseded** — legacy per-device 10-coefficient fit on raw counts, uploaded via `set_spec_coeff`. Wrong tier and missing tier 1; kept for the serial upload/validation cells only |
 
 ## Supporting files
 
 | file | role |
 |---|---|
-| [Scripts/as7341_calibrate.py](Scripts/as7341_calibrate.py) | deployable goal-A chain, no workbook or data dependency |
-| [Firmware/docs/AS7341_AD000198_3-00.xlsx](Firmware/docs/AS7341_AD000198_3-00.xlsx) | ams workbook — `CM`, dark offsets, XYZ matrix |
-| [Firmware/docs/AS7341_AN000633_2-00.pdf](Firmware/docs/AS7341_AN000633_2-00.pdf) | ams app note — §2.1, §2.2, §2.4 definitions |
+| [as7341_calibrate.py](as7341_calibrate.py) | deployable goal-A chain, no workbook or data dependency |
+| [../Firmware/docs/AS7341_AD000198_3-00.xlsx](../Firmware/docs/AS7341_AD000198_3-00.xlsx) | ams workbook — `CM`, dark offsets, XYZ matrix |
+| [../Firmware/docs/AS7341_AN000633_2-00.pdf](../Firmware/docs/AS7341_AN000633_2-00.pdf) | ams app note — §2.1, §2.2, §2.4 definitions |
 | `data/multi_par_spec.csv`, `data/multi_par_spec_lr1b.csv` | 462 samples, 6 devices |
-| `Scripts/par_coeffs_fleet.json` | tier-2 export (generated) |
+| `par_coeffs_fleet.json` | tier-2 export (generated) |
