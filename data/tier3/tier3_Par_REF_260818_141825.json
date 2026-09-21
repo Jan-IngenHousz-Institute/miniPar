@@ -1,0 +1,104 @@
+{
+  "device": "Par_REF",
+  "hello": "MiniPAR,1.1,1.06",
+  "firmware": "1.06",
+  "timestamp": "2026-08-18T14:20:50",
+  "operator": "",
+  "light_source": "LED panel on KIPRIM DC supply, constant 25.0 V, current swept",
+  "reference": "Li-Cor Li-250A via micropython TIA board",
+  "exposure": {
+    "model": "AS7341",
+    "available": "1",
+    "atime": "100",
+    "astep": "999",
+    "gain": "2"
+  },
+  "tier2": {
+    "source": "par_coeffs_fleet.json",
+    "fit": "lsq_linear, basic_counts vs tia_par, all samples, F1-F8 >= 0, clear/nir free, intercept discarded, shrunk toward W_TARGET at lambda=0.03",
+    "lambda": 0.03,
+    "prior_is_placeholder": true,
+    "w": [
+      40.80630255071444,
+      42.17801163395037,
+      69.84936470711112,
+      85.87486912191122,
+      61.89558876412609,
+      43.74239901865681,
+      51.571380123564126,
+      14.70546139981266,
+      19.308319645358843,
+      -27.25260028429117
+    ],
+    "verified_on_device": false
+  },
+  "tier3": {
+    "slope": 0.8907712499144657,
+    "intercept": 0.6843191192821874,
+    "uploaded": true,
+    "previous": {
+      "slope": 1.0,
+      "intercept": 0.0
+    }
+  },
+  "fit": {
+    "levels_a": [
+      0.0,
+      0.2,
+      0.4,
+      0.8,
+      1.2,
+      1.6
+    ],
+    "settle_s": 4.0,
+    "repeats": 5,
+    "up": {
+      "n": 6,
+      "r2": 0.9999872337500348,
+      "med_pct": 0.291598303159615,
+      "max_pct": 2.7207684410735764
+    },
+    "down": {
+      "n": 6,
+      "r2": 0.999981468942118,
+      "med_pct": 0.24619372254467348,
+      "max_pct": 4.0148507499134745
+    }
+  },
+  "check": {
+    "currents_a": [
+      0.3,
+      0.6,
+      1.0,
+      1.4
+    ],
+    "median_abs_err_pct": 0.4329844267951245,
+    "rows": [
+      {
+        "current_a": 0.3,
+        "ref": 23.574738,
+        "par": 23.55,
+        "err_pct": -0.104934358125207
+      },
+      {
+        "current_a": 0.6,
+        "ref": 43.059832,
+        "par": 43.35,
+        "err_pct": 0.6738716491044399
+      },
+      {
+        "current_a": 1.0,
+        "ref": 68.86686,
+        "par": 69.23,
+        "err_pct": 0.5273073289532895
+      },
+      {
+        "current_a": 1.4,
+        "ref": 94.38037,
+        "par": 94.7,
+        "err_pct": 0.3386615246369596
+      }
+    ]
+  },
+  "expected_daylight_err_pct": 4.4
+}

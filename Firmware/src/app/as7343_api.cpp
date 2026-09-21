@@ -219,9 +219,13 @@ bool as7343_readInto(SpectrometerResult *out) {
   // Safe to stop measurement now
   writeRegister8(kAs7343Enable, enable_val & ~kAs7343SpEnBit);
 
+  // ASTATUS bit 7 is device-wide, so it belongs in sat_flags. It used to be written as
+  // sat_mask = 0xFFFF, which claimed "every channel hit ADC full scale" — a different
+  // and stronger statement than the hardware actually makes.
   const bool saturated = (astatus_val & kAs7343AstatusAsat) != 0;
-  out->model    = SpectrometerModel::AS7343;
-  out->sat_mask = saturated ? 0xFFFF : 0;
+  out->model     = SpectrometerModel::AS7343;
+  out->sat_mask  = 0;
+  out->sat_flags = saturated ? SAT_ANALOG : 0;
 
 #ifdef AS7343_BRINGUP_RAW_DUMP
   // Bringup mode: 18 channels in Adafruit DATA register order.

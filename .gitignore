@@ -8,3 +8,5 @@
 Firmware/.pio/
 Firmware/.vscode/
 Firmware/.cache/
+new_calibration_miniPAR/data/*
+Scripts/data/*
