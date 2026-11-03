@@ -1,0 +1,105 @@
+{
+  "device": "Par_REF",
+  "device_mac": "3CDC750C0504",
+  "hello": "MiniPAR,1.1,1.06",
+  "firmware": "1.06",
+  "timestamp": "2026-08-18T15:29:14",
+  "operator": "",
+  "light_source": "LED panel on KIPRIM DC supply, constant 25.0 V, current swept",
+  "reference": "Li-Cor Li-250A via micropython TIA board",
+  "exposure": {
+    "model": "AS7341",
+    "available": "1",
+    "atime": "100",
+    "astep": "999",
+    "gain": "2"
+  },
+  "tier2": {
+    "source": "par_coeffs_fleet.json",
+    "fit": "lsq_linear, basic_counts vs tia_par, all samples, F1-F8 >= 0, clear/nir free, intercept discarded, shrunk toward W_TARGET at lambda=0.03",
+    "lambda": 0.03,
+    "prior_is_placeholder": true,
+    "w": [
+      40.80630255071444,
+      42.17801163395037,
+      69.84936470711112,
+      85.87486912191122,
+      61.89558876412609,
+      43.74239901865681,
+      51.571380123564126,
+      14.70546139981266,
+      19.308319645358843,
+      -27.25260028429117
+    ],
+    "verified_on_device": true
+  },
+  "tier3": {
+    "slope": 1.0106035961681676,
+    "intercept": 0.6764241794326707,
+    "uploaded": true,
+    "previous": {
+      "slope": 0.890771,
+      "intercept": 0.684319
+    }
+  },
+  "fit": {
+    "levels_a": [
+      0.0,
+      0.2,
+      0.4,
+      0.8,
+      1.2,
+      1.6
+    ],
+    "settle_s": 4.0,
+    "repeats": 5,
+    "up": {
+      "n": 6,
+      "r2": 0.9999949998074023,
+      "med_pct": 0.12418269926834902,
+      "max_pct": 1.3360414358296098
+    },
+    "down": {
+      "n": 6,
+      "r2": 0.9999923949639017,
+      "med_pct": 0.13471268234980233,
+      "max_pct": 0.5271979472494113
+    }
+  },
+  "check": {
+    "currents_a": [
+      0.3,
+      0.6,
+      1.0,
+      1.4
+    ],
+    "median_abs_err_pct": 0.31527312597772816,
+    "rows": [
+      {
+        "current_a": 0.3,
+        "ref": 23.710208,
+        "par": 23.87,
+        "err_pct": 0.6739375715303699
+      },
+      {
+        "current_a": 0.6,
+        "ref": 43.172724,
+        "par": 43.36,
+        "err_pct": 0.4337831451172669
+      },
+      {
+        "current_a": 1.0,
+        "ref": 69.002332,
+        "par": 68.97,
+        "err_pct": -0.04685638740440931
+      },
+      {
+        "current_a": 1.4,
+        "ref": 94.60615,
+        "par": 94.42,
+        "err_pct": -0.19676310683818948
+      }
+    ]
+  },
+  "expected_daylight_err_pct": 4.4
+}

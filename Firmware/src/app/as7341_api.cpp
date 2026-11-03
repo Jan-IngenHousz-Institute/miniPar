@@ -18,6 +18,70 @@ constexpr uint8_t kAs7341ChipIdMasked  = 0x24;
 constexpr uint8_t kAdafruitLen = 12;
 constexpr uint8_t kResultLen   = 10;
 
+// ---------------------------------------------------------------------------
+// Registers touched directly.  The Adafruit library reaches these through
+// private helpers, so the two SMUX steps are reproduced here rather than
+// forking the library — see as7341_readInto() for why the library's own
+// readAllChannels() cannot be used when saturation matters.
+// ---------------------------------------------------------------------------
+constexpr uint8_t kAs7341Enable   = 0x80;  // PON=bit0, SP_EN=bit1, SMUXEN=bit4
+constexpr uint8_t kAs7341Status   = 0x93;  // latched interrupt status, write-1-to-clear
+constexpr uint8_t kAs7341Ch0DataL = 0x95;  // CH0_DATA_L .. CH5_DATA_H = 0x95..0xA0
+constexpr uint8_t kAs7341Status2  = 0xA3;  // AVALID / ASAT for the integration just finished
+constexpr uint8_t kAs7341Cfg6     = 0xAF;  // SMUX command in bits[4:3]
+constexpr uint8_t kAs7341Intenab  = 0xF9;  // interrupt enables (read only, for diagnostics)
+
+constexpr uint8_t kAs7341SpEnBit    = 0x02;
+constexpr uint8_t kAs7341SmuxEnBit  = 0x10;
+constexpr uint8_t kAs7341SmuxCmdWrite = 0x02 << 3;  // CFG6 bits[4:3] = 0b10
+constexpr uint8_t kAs7341SmuxCmdMask  = 0x03 << 3;
+
+// STATUS2 bit layout. AVALID at bit 6 is confirmed by the Adafruit library
+// (getIsDataReady reads bit 6 of 0xA3). The two ASAT positions are inherited from the
+// AS7343 sibling in this repo, where they were hardware-verified (as7343_api.cpp:52-54,
+// "verified 0x44=AVALID|ASAT_ANA"); the parts share the AVALID position, which is the
+// evidence they share the layout.
+// TODO(bringup): confirm on an AS7341 with `spec_diag`, which dumps this byte raw.
+constexpr uint8_t kAs7341AvalidBit   = 0x40;  // bit 6
+constexpr uint8_t kAs7341AsatAnalog  = 0x04;  // bit 2
+constexpr uint8_t kAs7341AsatDigital = 0x08;  // bit 3
+constexpr uint8_t kAs7341AsatAny     = kAs7341AsatAnalog | kAs7341AsatDigital;
+
+// Full scale of the ADC counter for the current exposure. AN000633 p.7 footnote 1:
+// "TINT directly determines the Full Scale Range and saturation" — it is NOT a fixed
+// 0xFFFF. The uint32_t is load-bearing: (255+1)*(65534+1) overflows 16 bits.
+uint16_t as7341FullScale(uint8_t atime, uint16_t astep) {
+  const uint32_t full_scale = (uint32_t)(atime + 1u) * (uint32_t)(astep + 1u);
+  return full_scale >= 0xFFFFu ? 0xFFFFu : (uint16_t)full_scale;
+}
+
+// ---------------------------------------------------------------------------
+// Low-level I2C helpers, same shape as the proven ones in as7343_api.cpp
+// ---------------------------------------------------------------------------
+bool writeRegister8(uint8_t reg, uint8_t value) {
+  Wire.beginTransmission(kAs7341I2cAddress);
+  Wire.write(reg);
+  Wire.write(value);
+  return Wire.endTransmission() == 0;
+}
+
+bool readRegister8(uint8_t reg, uint8_t *value) {
+  if (!value) return false;
+  Wire.beginTransmission(kAs7341I2cAddress);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(static_cast<int>(kAs7341I2cAddress), 1) != 1) return false;
+  *value = Wire.read();
+  return true;
+}
+
+bool updateRegister8(uint8_t reg, uint8_t mask, uint8_t value) {
+  uint8_t current = 0;
+  if (!readRegister8(reg, &current)) return false;
+  const uint8_t updated = (uint8_t)((current & ~mask) | (value & mask));
+  return updated == current ? true : writeRegister8(reg, updated);
+}
+
 } // namespace
 
 static Adafruit_AS7341 as7341;
@@ -48,17 +112,96 @@ bool as7341_readAndValidateChipId(uint8_t *raw_out) {
   return (raw & kAs7341ChipIdMask) == kAs7341ChipIdMasked;
 }
 
+// Register bytes captured during the most recent as7341_readInto(), kept for `spec_diag`.
+static uint8_t s_last_status2_low  = 0;  // STATUS2 after the F1-F4 integration
+static uint8_t s_last_status2_high = 0;  // STATUS2 after the F5-F8 integration
+static uint8_t s_last_status       = 0;  // latched STATUS (0x93) after both integrations
+
+// Runs one SMUX pass end to end: six ADC channels, plus the STATUS2 byte sampled while
+// that integration's flags are still current.
+//
+// This reproduces Adafruit_AS7341::setSMUXLowChannels() followed by the read half of
+// readAllChannels(). It has to, because readAllChannels() runs BOTH integrations before
+// it returns and STATUS2 only ever describes the most recent one — so reading status
+// after it returns describes the F5-F8 pass and is structurally blind to F1-F4
+// saturation. setSMUXCommand() and enableSMUX() are private in the library, but both are
+// single register operations, so this reuses the public setup_*() SMUX tables and does
+// only those two steps by hand rather than forking the library.
+static bool runSmuxPass(Adafruit_AS7341 &dev, bool f1_f4, uint16_t out[6], uint8_t *status2) {
+  constexpr int kSmuxTimeoutMs = 1000;
+
+  dev.enableSpectralMeasurement(false);
+
+  if (!updateRegister8(kAs7341Cfg6, kAs7341SmuxCmdMask, kAs7341SmuxCmdWrite)) return false;
+  if (f1_f4) {
+    dev.setup_F1F4_Clear_NIR();
+  } else {
+    dev.setup_F5F8_Clear_NIR();
+  }
+
+  // Kick the SMUX write, then wait for the chip to clear SMUXEN itself.
+  if (!updateRegister8(kAs7341Enable, kAs7341SmuxEnBit, kAs7341SmuxEnBit)) return false;
+  bool smux_done = false;
+  for (int waited = 0; waited < kSmuxTimeoutMs && !smux_done; waited++) {
+    uint8_t enable_val = 0;
+    if (!readRegister8(kAs7341Enable, &enable_val)) return false;
+    if ((enable_val & kAs7341SmuxEnBit) == 0) {
+      smux_done = true;
+      break;
+    }
+    delay(1);
+  }
+  if (!smux_done) return false;
+
+  if (!dev.enableSpectralMeasurement(true)) return false;
+  dev.delayForData(0);  // polls AVALID
+
+  // Sample STATUS2 before anything can start the next integration — these flags describe
+  // the integration that just finished and are re-armed by the next one.
+  if (!readRegister8(kAs7341Status2, status2)) return false;
+
+  Wire.beginTransmission(kAs7341I2cAddress);
+  Wire.write(kAs7341Ch0DataL);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(static_cast<int>(kAs7341I2cAddress), 12) != 12) return false;
+  for (uint8_t i = 0; i < 6; i++) {
+    const uint8_t lo = Wire.read();
+    const uint8_t hi = Wire.read();
+    out[i] = (uint16_t)lo | ((uint16_t)hi << 8);
+  }
+  return true;
+}
+
 bool as7341_readInto(SpectrometerResult *out) {
   if (!out) {
     return false;
   }
+
+  // Clear the latched status so `spec_diag` can also observe whether STATUS (0x93)
+  // accumulates ASAT across both passes. Nothing below depends on the answer — the
+  // per-pass STATUS2 reads are authoritative — but it is the cheap way to find out
+  // whether a future version could drop to a single post-read status check.
+  writeRegister8(kAs7341Status, 0xFF);
+
   uint16_t raw[kAdafruitLen];
-  if (!as7341.readAllChannels(raw)) {
+  uint8_t status2_low = 0;
+  uint8_t status2_high = 0;
+  if (!runSmuxPass(as7341, true, &raw[0], &status2_low)) {
     return false;
   }
+  if (!runSmuxPass(as7341, false, &raw[6], &status2_high)) {
+    return false;
+  }
+
+  s_last_status2_low  = status2_low;
+  s_last_status2_high = status2_high;
+  s_last_status       = 0;
+  readRegister8(kAs7341Status, &s_last_status);
+
   out->model         = SpectrometerModel::AS7341;
   out->channel_count = kResultLen;
   out->sat_mask      = 0;
+  out->sat_flags     = 0;
   // First SMUX pass: Adafruit[0..3] -> channels[0..3]
   out->channels[0] = raw[0];
   out->channels[1] = raw[1];
@@ -72,12 +215,41 @@ bool as7341_readInto(SpectrometerResult *out) {
   out->channels[7] = raw[9];
   out->channels[8] = raw[10];
   out->channels[9] = raw[11];
-  // Flag any channel at full-scale (0xFFFF) as saturated
+
+  // Digital: the counter topped out. Full scale follows the exposure, so comparing
+  // against a hardcoded 0xFFFF would never fire at short integration times.
+  const uint16_t full_scale = as7341FullScale(as7341.getATIME(), as7341.getASTEP());
   for (uint8_t i = 0; i < kResultLen; i++) {
-    if (out->channels[i] == 0xFFFF) out->sat_mask |= (1u << i);
+    if (out->channels[i] >= full_scale) {
+      out->sat_mask  |= (uint16_t)(1u << i);
+      out->sat_flags |= SAT_DIGITAL;
+    }
   }
+
+  // Analog: reported device-wide by the hardware, so either pass condemns the reading.
+  const uint8_t status2_any = (uint8_t)(status2_low | status2_high);
+  if ((status2_any & kAs7341AsatAnalog) != 0)  out->sat_flags |= SAT_ANALOG;
+  if ((status2_any & kAs7341AsatDigital) != 0) out->sat_flags |= SAT_DIGITAL;
+
   return true;
 }
+
+uint16_t as7341_getFullScale() {
+  return as7341FullScale(as7341.getATIME(), as7341.getASTEP());
+}
+
+void as7341_getLastStatusBytes(uint8_t *status, uint8_t *status2_low, uint8_t *status2_high) {
+  if (status)       *status       = s_last_status;
+  if (status2_low)  *status2_low  = s_last_status2_low;
+  if (status2_high) *status2_high = s_last_status2_high;
+}
+
+bool as7341_readDiagRegister(uint8_t which, uint8_t *value) {
+  // Exposed only for `spec_diag`; `which` is one of the kAs7341* register addresses.
+  return readRegister8(which, value);
+}
+
+uint8_t as7341_intenabRegister() { return kAs7341Intenab; }
 
 bool as7341_setAtIME(uint8_t atime_value) {
   return as7341.setATIME(atime_value);

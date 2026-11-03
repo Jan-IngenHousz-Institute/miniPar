@@ -23,7 +23,8 @@ Commands are sent as plain text terminated with `\n`. JSON mode is also supporte
     - Response: comma-separated list of I2C addresses that ACK (e.g. `0x39`)
 * `spec[,<count>]`
     - Response: `{"spectrometer":{"model":"AS7341","channels":{"f1_415":1.2345,"f2_445":6.7890,...},"par":123.45}}` (JSON) / `model,ch0,ch1,...,par` (plain)
-    - Returns **basic counts** per channel: `raw_reading / gain / integration_time` (counts per second per gain unit). Values are comparable across different gain and integration-time settings.
+    - Returns **basic counts** per channel: `raw_reading / gain / integration_time_ms` (counts per millisecond per gain unit). Values are comparable across different gain and integration-time settings.
+    - ⚠️ Firmware ≤ 1.05 divided by the integration time in **seconds**, so these values were 1000× larger. Check `hello`'s firmware version if you interpret them.
     - Also includes the calculated PAR value (same as the `par` command), computed from this same reading.
     - `<count>` repeats the measurement that many times (omit, or `1`, for a single reading); each reading is printed as soon as it's taken. With `<count> > 1`: JSON response becomes an array of the single-reading objects (`[{"spectrometer":{...}},{"spectrometer":{...}},...]`); plain response is the single-reading lines joined with `;` on one line.
 * `spec_raw`
@@ -49,7 +50,7 @@ Commands are sent as plain text terminated with `\n`. JSON mode is also supporte
     - `<count>` repeats the measurement that many times (omit, or `1`, for a single reading); each reading is printed as soon as it's taken. With `<count> > 1`: JSON response becomes an array (`[{"par":1.2},{"par":3.4},...]`); plain response is the values joined with `;` on one line.
 * `par_raw`
     - Response: `1.23`
-    - Weighted dot product of **basic counts** (raw / gain / integration_time) and per-channel PAR coefficients. Independent of gain and integration-time settings.
+    - Weighted dot product of **basic counts** (raw / gain / integration_time_ms) and per-channel PAR coefficients. Independent of gain and integration-time settings.
 * `cal_par_slope,<value>`
     - Example: `cal_par_slope,10.0`
     - Response: `{"calibration":{"slope":10.0}}`
@@ -64,8 +65,9 @@ Commands are sent as plain text terminated with `\n`. JSON mode is also supporte
 * `set_spec_coeff,<channel>,<value>`
     - Example: `set_spec_coeff,0,0.614975`
     - Response: `{"spectrometer_coeff":{"channel":0,"value":0.614975}}`
-    - Set per-channel PAR coefficient (channel 0–17). Coefficients are applied to **basic counts** (raw / gain / integration_time), so they must account for the desired normalization. Persisted to NVS.
+    - Set per-channel PAR coefficient (channel 0–17). Coefficients are applied to **basic counts** (raw / gain / integration_time_ms), so they must account for the desired normalization. Persisted to NVS.
     - Default coefficients are pre-scaled for the default AS7341 settings (ATIME=100, ASTEP=999, GAIN=2×); re-derive from calibration if defaults are changed.
+    - Since firmware 1.06 these are per-millisecond basic counts, matching `basic_counts()` in [new_calibration_miniPAR/as7341_calibrate.py](new_calibration_miniPAR/as7341_calibrate.py) — upload host-fitted coefficients directly, with no factor of 1000. Coefficients written by an earlier firmware are rescaled once on the first 1.06 boot.
 * `get_spec_coeff`
     - Response: `{"spectrometer_coeffs":{"channels":{"0":0.614975,"1":0.053037,...}}}`
     - Get all 18 per-channel PAR coefficients.
@@ -132,7 +134,7 @@ Saturation is checked automatically on every spectrometer read (`spec`, `spec_ra
 
 * Command terminator: `\n` (`\r` is ignored)
 * PAR units: µmol/m²/s
-* **Basic counts**: `raw_reading / gain / integration_time`, where `integration_time = (ATIME+1) × (ASTEP+1) × 2.78 µs`. Used by `spec`, `par`, and `par_raw` — values are gain/integration-time independent.
+* **Basic counts**: `raw_reading / gain / integration_time_ms`, where `integration_time_ms = (ATIME+1) × (ASTEP+1) × 2.78e-3 ms`. Used by `spec`, `par`, and `par_raw` — values are gain/integration-time independent. This is the ams AN000633 §2.1 convention; firmware ≤ 1.05 used seconds instead, see [CALIBRATION.md](new_calibration_miniPAR/CALIBRATION.md#units-migration-firmware-105--106).
 * **Default AS7341 settings**: ATIME=100, ASTEP=999, GAIN=2× (integration time ≈ 280.8 ms). Per-channel PAR coefficients stored in NVS are calibrated for basic counts at these defaults.
 
 
