@@ -1,0 +1,50 @@
+name: Firmware build
+
+on:
+  pull_request:
+    paths:
+      - "Firmware/**"
+      - "tools/build_release_assets.sh"
+      - ".github/workflows/firmware.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Firmware/**"
+      - "tools/build_release_assets.sh"
+      - ".github/workflows/firmware.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build MiniPAR firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: |
+          python -m venv "${RUNNER_TEMP}/platformio"
+          "${RUNNER_TEMP}/platformio/bin/pip" install --disable-pip-version-check platformio==6.1.19
+
+      - name: Build and assemble flash assets
+        id: build
+        env:
+          PIO: ${{ runner.temp }}/platformio/bin/pio
+        run: tools/build_release_assets.sh | tee build-output.txt
+
+      - name: Upload firmware candidate
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: minipar-firmware-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30

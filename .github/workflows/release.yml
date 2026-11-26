@@ -1,0 +1,72 @@
+name: Release firmware
+
+# Push a tag v<version> on main, where <version> equals
+# DEVICE_FIRMWARE_VERSION_STR in Firmware/include/app/device_config.h
+# (for example v1.07). The workflow builds that commit and creates a DRAFT
+# GitHub release with the flash assets. A maintainer publishes the draft after
+# a hardware check; openJII lists only published releases of this repository
+# (backend setting FIRMWARE_REPO_MINIPAR).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: firmware-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and draft release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Require the tag to be on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: |
+          python -m venv "${RUNNER_TEMP}/platformio"
+          "${RUNNER_TEMP}/platformio/bin/pip" install --disable-pip-version-check platformio==6.1.19
+
+      - name: Build and assemble flash assets
+        env:
+          PIO: ${{ runner.temp }}/platformio/bin/pio
+          TAG: ${{ github.ref_name }}
+        # The tag must name the version the firmware reports.
+        run: tools/build_release_assets.sh "${TAG#v}"
+
+      - name: Fail if the release already exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists" >&2
+            exit 1
+          fi
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "${TAG}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --draft \
+            --verify-tag \
+            --title "MiniPAR firmware ${TAG}" \
+            --generate-notes
