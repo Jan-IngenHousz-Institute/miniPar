@@ -33,11 +33,17 @@ static void printJsonSafeString(const char *s) {
 // colon-separated, byte zero first. This is the same form as the Ambit's
 // trace sensor_id and INFO device_id (ambit trace_v3 format_sensor_id), so
 // openJII registers every JII family by one normalized MAC.
+// ESP.getEfuseMac() is the Arduino API in both core 2.x and 3.x; the IDF call
+// esp_efuse_mac_get_default() moved to esp_mac.h in core 3.x.
 static void formatDeviceMac(char out[18]) {
-  uint8_t mac[6];
-  esp_efuse_mac_get_default(mac);
+  const uint64_t efuse = ESP.getEfuseMac();
   snprintf(out, 18, "%02X:%02X:%02X:%02X:%02X:%02X",
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+           static_cast<unsigned>(efuse & 0xFFU),
+           static_cast<unsigned>((efuse >> 8) & 0xFFU),
+           static_cast<unsigned>((efuse >> 16) & 0xFFU),
+           static_cast<unsigned>((efuse >> 24) & 0xFFU),
+           static_cast<unsigned>((efuse >> 32) & 0xFFU),
+           static_cast<unsigned>((efuse >> 40) & 0xFFU));
 }
 
 // INFO: the openJII generic-device identity contract. The platform sends
