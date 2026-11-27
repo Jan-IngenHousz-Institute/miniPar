@@ -10,7 +10,11 @@
 Commands are sent as plain text terminated with `\n`. JSON mode is also supported — send a valid JSON object and the device will respond in JSON.
 
 * `hello`
-    - Response: `MiniPAR,1.1` (plain) / `{"device":"MiniPAR","version":"1.1"}` (JSON)
+    - Response: `MiniPAR,1.1,1.07` (plain: product, hardware version, firmware version) / `{"device":"MiniPAR","version":"1.1","mac":"58:CF:79:12:34:56"}` (JSON, inside a protocol frame)
+    - Since firmware 1.07 the JSON form carries `mac`: the ESP32 eFuse MAC, uppercase, colon-separated, byte zero first. The plain form is unchanged, so tools that split it on commas keep working.
+* `{"command":"INFO"}` (or `info` in plain mode)
+    - Identity for openJII (generic-device contract, firmware 1.07+), one line in both modes: `{"status":"success","data":{"device_name":"NoName","device_type":"minipar","device_id":"58:CF:79:12:34:56","firmware_version":"1.07"}}`
+    - `device_name` is the name saved with `set_name`; `device_id` is the same MAC as `hello`'s `mac`. openJII registers a MiniPAR by family plus this MAC, in the same form the Ambit reports.
 * `reboot`
     - Restarts the device. Prints boot info ending with `Ready`.
 * `delay_ms,<value>`
@@ -136,6 +140,16 @@ Saturation is checked automatically on every spectrometer read (`spec`, `spec_ra
 * PAR units: µmol/m²/s
 * **Basic counts**: `raw_reading / gain / integration_time_ms`, where `integration_time_ms = (ATIME+1) × (ASTEP+1) × 2.78e-3 ms`. Used by `spec`, `par`, and `par_raw` — values are gain/integration-time independent. This is the ams AN000633 §2.1 convention; firmware ≤ 1.05 used seconds instead, see [CALIBRATION.md](new_calibration_miniPAR/CALIBRATION.md#units-migration-firmware-105--106).
 * **Default AS7341 settings**: ATIME=100, ASTEP=999, GAIN=2× (integration time ≈ 280.8 ms). Per-channel PAR coefficients stored in NVS are calibrated for basic counts at these defaults.
+
+
+# Building and releasing firmware
+
+`tools/build_release_assets.sh` builds the PlatformIO environment and puts flashable assets in `dist/`: `minipar-fw-v<version>.bin` (application, 0x10000), `bootloader.bin` (0x0), `partitions.bin` (0x8000), `boot_app0.bin` (0xe000) and `manifest.json` with offsets and SHA-256 hashes. The version comes from `DEVICE_FIRMWARE_VERSION_STR` in `Firmware/include/app/device_config.h`, the value `hello` and INFO report.
+
+* **Every PR and push to `main`** that touches the firmware runs `.github/workflows/firmware.yml` and uploads `dist/` as an artifact.
+* **A release:** bump `DEVICE_FIRMWARE_VERSION_STR`, merge, then push the tag `v<version>` (for example `v1.07`) on `main`. `.github/workflows/release.yml` refuses a tag that differs from the source version or is not on `main`, builds it and creates a **draft** release with the assets. Publish the draft after checking the build on a device. openJII lists the published releases of this repository as MiniPAR firmware once its `FIRMWARE_REPO_MINIPAR` setting names it.
+
+Local build: `PIO="uvx --from platformio pio" tools/build_release_assets.sh`.
 
 
 FW Design (L. Grabowski, L. Caracciolo),

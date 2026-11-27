@@ -29,6 +29,37 @@ static void printJsonSafeString(const char *s) {
   }
 }
 
+// The ESP32 eFuse base MAC as the device's hardware identity: uppercase,
+// colon-separated, byte zero first. This is the same form as the Ambit's
+// trace sensor_id and INFO device_id (ambit trace_v3 format_sensor_id), so
+// openJII registers every JII family by one normalized MAC.
+// ESP.getEfuseMac() is the Arduino API in both core 2.x and 3.x; the IDF call
+// esp_efuse_mac_get_default() moved to esp_mac.h in core 3.x.
+static void formatDeviceMac(char out[18]) {
+  const uint64_t efuse = ESP.getEfuseMac();
+  snprintf(out, 18, "%02X:%02X:%02X:%02X:%02X:%02X",
+           static_cast<unsigned>(efuse & 0xFFU),
+           static_cast<unsigned>((efuse >> 8) & 0xFFU),
+           static_cast<unsigned>((efuse >> 16) & 0xFFU),
+           static_cast<unsigned>((efuse >> 24) & 0xFFU),
+           static_cast<unsigned>((efuse >> 32) & 0xFFU),
+           static_cast<unsigned>((efuse >> 40) & 0xFFU));
+}
+
+// INFO: the openJII generic-device identity contract. The platform sends
+// {"command":"INFO"} and reads one bare status line; callers end the line.
+// device_name is the persisted name (set_name), device_id the MAC above.
+// Keep the line short.
+static void printInfoLine() {
+  char mac[18];
+  formatDeviceMac(mac);
+  Serial.print(F("{\"status\":\"success\",\"data\":{\"device_name\":\""));
+  printJsonSafeString(cmd_get_dev_name());
+  Serial.print(F("\",\"device_type\":\"minipar\",\"device_id\":\""));
+  Serial.print(mac);
+  Serial.print(F("\",\"firmware_version\":\"" DEVICE_FIRMWARE_VERSION_STR "\"}}"));
+}
+
 static void printRawI2CScan() {
   bool first = true;
   for (uint8_t addr = 1; addr < 127; addr++) {
@@ -440,11 +471,8 @@ static bool printRawBme280GetTph() {
 // ---------------------------------------------------------------------------
 
 static bool serial_string_init() {
-  uint8_t mac[6];
-  esp_efuse_mac_get_default(mac);
   char mac_str[18];
-  snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  formatDeviceMac(mac_str);
 
   Serial.print("{\"device_name\":\"" DEVICE_PRODUCT_NAME "\",\"device_version\":\"" DEVICE_VERSION "\",\"device_id\":\"");
   Serial.print(mac_str);
@@ -467,6 +495,17 @@ bool handleJsonProtocol(const String &json) {
     Serial.print(err.c_str());
     Serial.println(F("\"}"));
     return false;
+  }
+
+  // {"command":"INFO"} is an identity query, not a protocol: answer it bare,
+  // without the measurement frame.
+  if (doc.is<JsonObject>()) {
+    const char *command = doc["command"];
+    if (command && strcasecmp(command, "INFO") == 0) {
+      printInfoLine();
+      Serial.print('\n');
+      return true;
+    }
   }
 
   bool handledAny = false;
@@ -538,10 +577,18 @@ bool handleJsonProtocol(const String &json) {
 bool handleCommandText(const String &cmd, bool jsonMode) {
   if (cmd == "hello") {
     if (jsonMode) {
-      Serial.print(F("{\"device\":\"" DEVICE_PRODUCT_NAME "\",\"version\":\"" DEVICE_VERSION "\"}"));
+      char mac[18];
+      formatDeviceMac(mac);
+      Serial.print(F("{\"device\":\"" DEVICE_PRODUCT_NAME "\",\"version\":\"" DEVICE_VERSION "\",\"mac\":\""));
+      Serial.print(mac);
+      Serial.print(F("\"}"));
     } else {
       Serial.print(F(DEVICE_PRODUCT_NAME "," DEVICE_VERSION "," DEVICE_FIRMWARE_VERSION_STR));
     }
+
+  } else if (cmd.equalsIgnoreCase("info")) {
+    // Line-mode alias of {"command":"INFO"}; prints the same JSON line.
+    printInfoLine();
 
   } else if (cmd == "battery") {
     if (jsonMode) {
